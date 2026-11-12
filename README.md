@@ -20,6 +20,13 @@ so friends on the same server join your bomber. Set `PORT` to change the port.
 4. Everyone still aboard after a successful mission is promoted one rank (saved in your browser).
 5. After landing you get time to walk around: the crew door is aft on the right side (**F** to climb out, **F** at the door to climb back in). **N** starts the next mission.
 
+## The crew
+
+- Every bot has a name and talks on the intercom (green lines): calling out fighters by clock position, kills, hits, flak, low ammo.
+- Bot gunners take a moment to pick up a target, fire in bursts and scan the sky when it is quiet.
+- Take a bot's station and he stands up and steps aside; leave it and he climbs back in. Your view moves into and out of the seat instead of cutting.
+- Flak bursts around the formation near the target. Hits punch holes in the skin that let daylight in.
+
 ## Moving around the ship
 
 - **F** gets you up from your station at any time, in flight too. Walk with W/A/S/D, look with the mouse. If the pilot gets up, the copilot (bot) flies.
@@ -41,7 +48,7 @@ so friends on the same server join your bomber. Set `PORT` to change the port.
 
 | Seat | Controls |
 |---|---|
-| 1 Pilot | W/S pitch, A/D roll, Q/E rudder, Shift/Z throttle, G gear, B brake, V outside view |
+| 1 Pilot | W/S pitch, A/D roll, Q/E rudder, Shift/Z throttle, G gear, B brake, mouse looks around the cockpit, V outside view |
 | 2 Bombardier | mouse + click nose gun, B bombsight, O bay doors, Space drop bombs |
 | 3 Top turret, 4 Ball turret, 5 Left waist, 6 Right waist, 7 Tail gunner | mouse (or arrows) aim, click / Space fire |
 

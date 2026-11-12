@@ -16,16 +16,15 @@ export const SEATS = [
 
 // Fuselage interior (plane-local metres). The crew walks a corridor along z.
 export const WALK_Z0 = -10, WALK_Z1 = 11;
-export const BAY = { z0: -3.0, z1: 0.6, fall: 0.34 };   // bomb bay; step further than `fall` off the catwalk with the doors open and you drop out
+export const BAY = { z0: -3.0, z1: 0.6, fall: 0.5 };    // bomb bay; step further than `fall` off the catwalk with the doors open and you drop out
 export const DOOR = { x: 1.0, z: 5.45 };                // crew door, right side aft
-// corridor half width at z
+// Corridor half width at z. It narrows smoothly towards each doorway so you slide through instead of snagging.
 export function halfW(z, doors) {
-  if (z < -7.9) return 0.45;                 // nose
-  if (z < -4.8) return 0.18;                 // flight deck, between the pilots' seats
-  if (z < BAY.z0) return 0.45;               // top turret
-  if (z < BAY.z1) return doors ? 0.75 : 0.2; // bomb bay catwalk
-  if (z < 6) return 0.5;                     // radio room, waist
-  return 0.5 - (z - 6) * 0.07;               // tail crawlway
+  const bay = doors ? 0.85 : 0.32;
+  const P = [[-10, 0.45], [-8, 0.45], [-7.7, 0.3], [-5, 0.3], [-4.7, 0.5], [-3.4, 0.5], [-3.05, 0.36], [-2.7, bay], [0.3, bay], [0.65, 0.36], [1, 0.55],
+    [2.3, 0.55], [2.6, 0.4], [2.9, 0.55], [5.9, 0.55], [6.3, 0.36], [11, 0.2]];
+  for (let i = 1; i < P.length; i++) if (z <= P[i][0]) { const a = P[i - 1], b = P[i]; return a[1] + (b[1] - a[1]) * Math.max(0, (z - a[0]) / (b[0] - a[0])); }
+  return 0.2;
 }
 // eye height of someone standing at z
 const EYE = [[-10, 0.35], [-7.9, 0.35], [-7.5, 1.5], [-5.1, 1.5], [-4.6, 0.55], [6, 0.55], [11, 0.4]];
