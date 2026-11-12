@@ -1,0 +1,8 @@
+{
+  "name": "b17-crew",
+  "version": "1.0.0",
+  "description": "Co-op B-17 bomber crew game (5 seats, bots fill empty ones)",
+  "type": "module",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "three": "^0.170.0", "ws": "^8.18.0" }
+}

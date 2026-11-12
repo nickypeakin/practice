@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fortress Crew</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #8fb4d8; font-family: ui-monospace, Menlo, Consolas, monospace; color: #e8e2c8; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #hud { pointer-events: none; }
+  .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(12, 16, 10, .55); }
+  .card { background: #1b2114ee; border: 2px solid #8a8455; padding: 26px 30px; width: min(440px, calc(100vw - 32px)); box-sizing: border-box; box-shadow: 0 12px 40px #0008; }
+  h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: 3px; color: #f0d77a; }
+  h2 { margin: 0 0 12px; font-size: 22px; letter-spacing: 2px; color: #f0d77a; }
+  p { margin: 6px 0 14px; font-size: 13px; line-height: 1.5; color: #c9c3a4; }
+  label { display: block; font-size: 11px; letter-spacing: 1px; color: #a9a37f; margin: 10px 0 4px; }
+  input { width: 100%; box-sizing: border-box; padding: 9px 10px; font: inherit; font-size: 15px; background: #0e120a; color: #f3eed6; border: 1px solid #6c6844; text-transform: none; }
+  input:focus { outline: 2px solid #f0d77a; }
+  button { margin-top: 18px; width: 100%; padding: 12px; font: inherit; font-size: 15px; font-weight: 700; letter-spacing: 2px; background: #f0d77a; color: #1b2114; border: 0; cursor: pointer; }
+  button:hover { background: #ffe89a; }
+  #rank { color: #f0d77a; }
+  #err { color: #ff8f7a; min-height: 16px; font-size: 12px; margin-top: 8px; }
+  #result .row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 5px 0; border-top: 1px solid #55523a; }
+  #result .good { color: #a8e07a; } #result .bad { color: #ff8f7a; }
+  .hidden { display: none !important; }
+  kbd { background: #0e120a; border: 1px solid #6c6844; padding: 0 4px; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="hud"></canvas>
+
+<div id="lobby" class="overlay">
+  <div class="card">
+    <h1>FORTRESS CREW</h1>
+    <p>Five seats, one B-17. Fuel her, arm her, fight off the Luftwaffe, bomb the target and bring her home. Empty seats are flown by bots.</p>
+    <p>Your rank: <span id="rank"></span></p>
+    <label for="name">CALLSIGN</label>
+    <input id="name" maxlength="16" autocomplete="off">
+    <label for="room">CREW CODE (leave blank to start a new crew)</label>
+    <input id="room" maxlength="8" autocomplete="off" style="text-transform:uppercase">
+    <button id="join">REPORT FOR DUTY</button>
+    <div id="err"></div>
+  </div>
+</div>
+
+<div id="result" class="overlay hidden">
+  <div class="card">
+    <h2 id="resTitle"></h2>
+    <p id="resText"></p>
+    <div id="resRows"></div>
+    <p id="resNext" style="margin:14px 0 0"></p>
+  </div>
+</div>
+
+<script type="module" src="/client.js"></script>
+</body>
+</html>
