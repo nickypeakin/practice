@@ -1,5 +1,5 @@
 // Authoritative game simulation for one bomber crew ("room").
-import { SEATS, AMMO_MAX, BOMBS_MAX, BULLET_SPD, G, BAY, DOOR, WALK_Z0, WALK_Z1, halfW, rot, irot, wrap, clamp, aimDir, clampAim, planeVel, impactPoint } from './public/shared.js';
+import { SCALE, SEATS, AMMO_MAX, BOMBS_MAX, BULLET_SPD, G, BAY, DOOR, WALK_Z0, WALK_Z1, halfW, rot, irot, wrap, clamp, aimDir, clampAim, planeVel, impactPoint } from './public/shared.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 2;
@@ -114,7 +114,7 @@ export class Room {
     s.pid = p.id; p.seat = i; this.takeAim(p, i);
   }
   atBase() { return Math.hypot(this.pl.x, this.pl.z + 300) < BASE_R; }
-  doorGround() { const pl = this.pl, o = rot([DOOR.x + 2.4, 0, DOOR.z], pl.yaw, 0, 0); return [pl.x + o[0], pl.z + o[2]]; }
+  doorGround() { const pl = this.pl, o = rot([(DOOR.x + 1.6) * SCALE, 0, DOOR.z * SCALE], pl.yaw, 0, 0); return [pl.x + o[0], pl.z + o[2]]; }
 
   action(p, a, m) {
     const pl = this.pl;
@@ -181,7 +181,7 @@ export class Room {
   }
   // a player went out through the open bomb bay
   dropOut(p) {
-    const pl = this.pl, w = p.walk, o = rot([w.x, -1.7, w.z], pl.yaw, pl.pitch, pl.roll);
+    const pl = this.pl, w = p.walk, o = rot([w.x * SCALE, -1.7 * SCALE, w.z * SCALE], pl.yaw, pl.pitch, pl.roll);
     p.walk = null;
     if (pl.ground) {
       p.foot = { x: pl.x + o[0], z: pl.z + o[2], yaw: wrap(pl.yaw + w.yaw) }; p.in.fx = p.in.fz = p.in.fy = undefined;
@@ -452,7 +452,7 @@ export class Room {
 
   // ---------------------------------------------------------------- guns
   gunOrigin(i) {
-    const pl = this.pl, o = rot(SEATS[i].gun.pos, pl.yaw, pl.pitch, pl.roll);
+    const pl = this.pl, o = rot(SEATS[i].gun.pos.map(v => v * SCALE), pl.yaw, pl.pitch, pl.roll);
     return [pl.x + o[0], pl.y + o[1], pl.z + o[2]];
   }
   guns(dt) {

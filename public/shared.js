@@ -1,6 +1,8 @@
 // Constants and math shared by the server simulation and the browser client.
 // Plane local axes: forward = -Z, right = +X, up = +Y. Euler order YXZ (yaw, pitch, roll).
 
+// The whole airframe is drawn and simulated this much larger than its local coordinates, so the crew has room inside.
+export const SCALE = 1.35;
 export const AMMO_MAX = 500, BOMBS_MAX = 8, BULLET_SPD = 820, G = 9.81;
 
 // Seats. st = [x, z] where a crewman stands in the fuselage to man the station; gun.eye = camera height above the gun.
@@ -21,13 +23,14 @@ export const DOOR = { x: 1.0, z: 5.45 };                // crew door, right side
 // Corridor half width at z. It narrows smoothly towards each doorway so you slide through instead of snagging.
 export function halfW(z, doors) {
   const bay = doors ? 0.85 : 0.32;
-  const P = [[-10, 0.45], [-8, 0.45], [-7.7, 0.3], [-5, 0.3], [-4.7, 0.5], [-3.4, 0.5], [-3.05, 0.36], [-2.7, bay], [0.3, bay], [0.65, 0.36], [1, 0.55],
-    [2.3, 0.55], [2.6, 0.4], [2.9, 0.55], [5.9, 0.55], [6.3, 0.36], [11, 0.2]];
+  const P = [[-10, 0.45], [-8, 0.45], [-7.7, 0.3], [-5, 0.3], [-4.7, 0.5], [-3.4, 0.5], [-3.05, 0.36], [-2.7, bay], [0.3, bay], [0.65, 0.36], [1, 0.6],
+    [2.3, 0.6], [2.6, 0.42], [2.9, 0.62], [5.9, 0.62], [6.3, 0.38], [11, 0.22]];
   for (let i = 1; i < P.length; i++) if (z <= P[i][0]) { const a = P[i - 1], b = P[i]; return a[1] + (b[1] - a[1]) * Math.max(0, (z - a[0]) / (b[0] - a[0])); }
   return 0.2;
 }
 // eye height of someone standing at z
-const EYE = [[-10, 0.35], [-7.9, 0.35], [-7.5, 1.5], [-5.1, 1.5], [-4.6, 0.55], [6, 0.55], [11, 0.4]];
+export const EYE_H = 1.19;   // standing eye height above the cabin floor, in local units (about 1.6 m)
+const EYE = [[-10, 0.05], [-7.9, 0.05], [-7.5, 1.24], [-5.1, 1.24], [-4.6, 0.21], [6, 0.21], [11, 0.35]];
 export function eyeY(z) {
   for (let i = 1; i < EYE.length; i++) if (z <= EYE[i][0]) { const a = EYE[i - 1], b = EYE[i]; return a[1] + (b[1] - a[1]) * Math.max(0, (z - a[0]) / (b[0] - a[0])); }
   return EYE[EYE.length - 1][1];
