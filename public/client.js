@@ -1,5 +1,5 @@
 import * as THREE from '/three/three.module.js';
-import { STN, STN_R, SEATS, RANKS, rankName, rankAbbr, AMMO_MAX, BOMBS_MAX, BULLET_SPD, wrap, clamp, clampAim, aimDir, planeVel, impactPoint } from '/shared.js';
+import { SEATS, ORDERS, BAY, DOOR, WALK_Z0, WALK_Z1, halfW, eyeY, rankName, rankAbbr, AMMO_MAX, BOMBS_MAX, BULLET_SPD, wrap, clamp, clampAim, aimDir, planeVel, impactPoint } from '/shared.js';
 
 const $ = id => document.getElementById(id);
 const store = { get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch { } } };
@@ -11,7 +11,7 @@ const scene = new THREE.Scene();
 const SKY = 0x9cc0e4;
 scene.background = new THREE.Color(SKY);
 scene.fog = new THREE.Fog(0xc4d8ea, 3000, 30000);
-const camera = new THREE.PerspectiveCamera(65, 1, 0.5, 60000);
+const camera = new THREE.PerspectiveCamera(65, 1, 0.08, 60000);
 scene.add(new THREE.HemisphereLight(0xdfeeff, 0x566038, 1.5));
 const sun = new THREE.DirectionalLight(0xfff2d6, 1.6); sun.position.set(0.5, 1, 0.3); scene.add(sun);
 
@@ -52,21 +52,6 @@ const cylZ = (r1, r2, len, mat, x = 0, y = 0, z = 0, seg = 14) => { const m = ne
   for (let i = 0; i < 3; i++) { base.add(box(60, 18, 50, hm, 220, 9, 560 - i * 90)); base.add(box(64, 3, 54, rm, 220, 19.5, 560 - i * 90)); }
   base.add(box(10, 26, 10, lam(0x8b8a78), 110, 13, 610)); base.add(box(15, 5, 15, lam(0x2f3a3f), 110, 28, 610));
 }
-// loading points beside the parked bomber
-{
-  const g = new THREE.Group(); scene.add(g);
-  const od = lam(0x4f5a34), dk = lam(0x2a2c2a), wood = lam(0x8a6e45), red = lam(0xa33a2a);
-  const ring = (x, z, c) => { const m = new THREE.Mesh(new THREE.RingGeometry(STN_R - 0.5, STN_R, 32), new THREE.MeshBasicMaterial({ color: c })); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.65, z); g.add(m); };
-  let [x, z] = STN.fuel; ring(x, z, 0xffb347);                                    // fuel truck
-  g.add(box(2.4, 2.2, 2.2, od, x + 4.5, 1.6, z - 2.6)); g.add(box(2.4, 0.5, 6.5, dk, x + 4.5, 0.9, z + 0.5));
-  { const t = cylZ(1.15, 1.15, 4.6, red, x + 4.5, 2.2, z + 1.2); g.add(t); }
-  for (const dz of [-2.4, 2.6]) for (const dx of [-1.2, 1.2]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.4, 10), dk); w.rotation.z = Math.PI / 2; w.position.set(x + 4.5 + dx, 0.5, z + dz); g.add(w); }
-  [x, z] = STN.ammo; ring(x, z, 0xf0d77a);                                        // ammo crates
-  g.add(box(1.6, 0.8, 1, wood, x + 4, 0.8, z)); g.add(box(1.6, 0.8, 1, wood, x + 4, 0.8, z + 1.2)); g.add(box(1.6, 0.8, 1, wood, x + 4, 1.6, z + 0.6)); g.add(box(1.2, 0.6, 0.8, od, x + 4, 0.7, z - 1.3));
-  [x, z] = STN.bombs; ring(x, z, 0xff7a5a);                                       // bomb cart
-  g.add(box(2, 0.3, 4.4, dk, x + 4.2, 0.9, z));
-  for (const dx of [-0.6, 0.1, 0.8]) g.add(cylZ(0.3, 0.3, 1.8, od, x + 4.2 + dx, 1.35, z + (dx > 0 ? 0.8 : -0.6), 8));
-}
 // clouds
 {
   const cm = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false });
@@ -88,41 +73,163 @@ const tgtMat = lam(0x7a5a48), tgtRoof = lam(0x4a4440), tgtBurnt = lam(0x1c1a18);
 
 // ------------------------------------------------------------------ B-17 model
 const OLIVE = 0x5b6338, plane = new THREE.Group(); scene.add(plane);
-const props = [], engSmokePos = [], turrets = [], gearParts = [];
-let bayDoor;
-{
-  const body = lam(OLIVE), dark = lam(0x3b4126), glass = lam(0xa9d3e6, { transparent: true, opacity: 0.55 }), metal = lam(0x2a2c2a), grey = lam(0x8d9488);
-  plane.add(cylZ(1.35, 1.35, 15, body, 0, 0, -1.5));
-  plane.add(cylZ(1.35, 0.55, 7, body, 0, 0.25, 9.5));                         // tail cone (r top = +z end after rotation)
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(1.33, 14, 10), glass); nose.scale.z = 1.5; nose.position.z = -9; plane.add(nose);
-  plane.add(box(1.7, 0.9, 3, glass, 0, 1.25, -6.3));                           // cockpit
-  plane.add(box(31.5, 0.45, 4.6, body, 0, -0.35, -2.6));                        // wing
-  plane.add(box(12, 0.5, 6.2, body, 0, -0.35, -2.6));                           // wing root
-  for (const x of [-10, -5, 5, 10]) {
-    plane.add(cylZ(0.85, 0.75, 3.6, dark, x, -0.3, -5.2));
-    const p = new THREE.Mesh(new THREE.CircleGeometry(1.9, 20), new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.3, side: THREE.DoubleSide })); p.position.set(x, -0.3, -7.1); plane.add(p); props.push(p);
-    const blade = box(0.25, 3.8, 0.1, metal, x, -0.3, -7.05); blade.visible = false; plane.add(blade); p.userData.blade = blade;
-    engSmokePos.push(new THREE.Vector3(x, 0, -3));
+const M = {
+  body: lam(OLIVE), dark: lam(0x3b4126), metal: lam(0x2a2c2a), grey: lam(0x8d9488),
+  glass: lam(0xa9d3e6, { transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false }),
+  inner: lam(0x77845a, { side: THREE.BackSide }), bulk: lam(0x69754f, { side: THREE.DoubleSide }), rib: lam(0x8c9870),
+  floor: lam(0x5a4c36), seat: lam(0x4a3c2c), leather: lam(0x6b4a2e), yellow: lam(0xd9b23a), wood: lam(0x8a6e45), bomb: lam(0x39402c),
+  disc: new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.3, side: THREE.DoubleSide }),
+};
+const TAU = Math.PI * 2;
+// Fuselage skin from z0 (front) to z1 (back). arcs = [[thetaStart, thetaLength]]; theta 0 = belly, PI/2 = right side, PI = roof.
+function shell(g, z0, z1, r0, r1, arcs, yc, inside, outMat = M.body) {
+  const out = [];
+  for (const [ts, tl] of arcs) {
+    const geo = new THREE.CylinderGeometry(r1, r0, z1 - z0, Math.max(4, Math.round(26 * tl / TAU)), 1, true, ts, tl);
+    for (const mat of inside ? [outMat, M.inner] : [outMat]) { const m = new THREE.Mesh(geo, mat); m.rotation.x = Math.PI / 2; m.position.set(0, yc, (z0 + z1) / 2); g.add(m); out.push(m); }
   }
-  plane.add(box(0.35, 4.8, 4.4, body, 0, 2.9, 10.2));                           // fin
-  plane.add(box(0.35, 1.6, 4.5, body, 0, 1.2, 6.5));                            // dorsal fillet
-  plane.add(box(13, 0.3, 3, body, 0, 0.8, 10.8));                               // stabilizer
-  const star = new THREE.Mesh(new THREE.CircleGeometry(1, 20), new THREE.MeshBasicMaterial({ color: 0x24406e })); star.rotation.x = -Math.PI / 2; star.position.set(-11.5, -0.1, -2.6); plane.add(star);
-  const starW = new THREE.Mesh(new THREE.CircleGeometry(0.55, 5), new THREE.MeshBasicMaterial({ color: 0xf2f2ec })); starW.rotation.x = -Math.PI / 2; starW.position.set(-11.5, -0.08, -2.6); plane.add(starW);
-  bayDoor = box(1.6, 0.2, 4.2, metal, 0, -1.45, -1.5); plane.add(bayDoor);
-  // landing gear
-  for (const x of [-5, 5]) { const g = new THREE.Group(); g.add(box(0.25, 2.2, 0.25, grey, x, -1.6, -3.6)); const w = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 0.5, 14), metal); w.rotation.z = Math.PI / 2; w.position.set(x, -2.15, -3.6); g.add(w); plane.add(g); gearParts.push(g); }
-  { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.3, 10), metal); w.rotation.z = Math.PI / 2; w.position.set(0, -1.2, 9.5); plane.add(w); gearParts.push(w); }
-  // turrets
-  SEATS.forEach((s, i) => {
+  return out;
+}
+const FULL = [[0, TAU]];
+// Outside of a B-17. full = the player's ship (cut-outs for windows, doors, cockpit; interior skin); otherwise a cheap copy for the formation.
+function buildAirframe(g, full) {
+  const R = 1.35, r = { props: [], gear: [], doors: [], domes: [] };
+  if (full) {
+    shell(g, -8.6, -7.9, R, R, FULL, 0, true);
+    shell(g, -7.9, -4.9, R, R, [[Math.PI + 0.68, TAU - 1.36]], 0, true);                 // open roof under the cockpit
+    shell(g, -4.9, BAY.z0, R, R, FULL, 0, true);
+    shell(g, BAY.z0, BAY.z1, R, R, [[0.55, TAU - 1.1]], 0, true);                         // bomb bay
+    r.doors = shell(g, BAY.z0, BAY.z1, R, R, [[-0.55, 1.1]], 0, true, M.metal);
+    shell(g, BAY.z1, 3.9, R, R, FULL, 0, true);
+    shell(g, 3.9, 4.7, R, R, [[1.95, TAU - 3.9], [TAU - 1.35, 2.7]], 0, true);            // waist windows
+    shell(g, 4.7, 5.0, R, R, FULL, 0, true);
+    shell(g, 5.0, 5.9, R, R, [[1.95, TAU - 1.11]], 0, true);                              // crew door
+    shell(g, 5.9, 6.0, R, R, FULL, 0, true);
+    shell(g, 6.0, 11.2, R, 0.76, FULL, 0.25, true);
+    shell(g, 11.2, 12.7, 0.76, 0.58, FULL, 0.25, false, M.glass);                         // tail gunner's glazing
+  } else {
+    shell(g, -8.6, 6, R, R, FULL, 0, false); shell(g, 6, 12.7, R, 0.58, FULL, 0.25, false);
+  }
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(R - 0.01, 16, 8, 0, TAU, 0, Math.PI / 2), M.glass); nose.rotation.x = -Math.PI / 2; nose.scale.y = 1.8; nose.position.z = -8.6; g.add(nose);
+  for (const [z, rad] of [[-8.6, 1.33], [-9.8, 1.16], [-10.6, 0.76]]) { const m = new THREE.Mesh(new THREE.TorusGeometry(rad, 0.035, 5, 24), M.dark); m.position.z = z; g.add(m); }   // nose framing
+  for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) { const m = box(0.05, 0.05, 2.2, M.dark, Math.sin(a) * 1.02, Math.cos(a) * 1.02, -9.6); m.rotation.set(Math.cos(a) * 0.5, -Math.sin(a) * 0.5, 0); g.add(m); }
+  // cockpit greenhouse
+  g.add(box(1.8, 1.0, 3, M.glass, 0, 1.55, -6.4)); g.add(box(1.84, 0.06, 2.3, M.body, 0, 2.08, -6.05));
+  for (const x of [-0.9, 0.9]) for (const z of [-7.9, -6.9, -4.9]) g.add(box(0.06, 1.0, 0.06, M.dark, x, 1.55, z));
+  g.add(box(0.06, 1.0, 0.06, M.dark, 0, 1.55, -7.9));
+  // wings stop at the fuselage side so nothing cuts through the bomb bay
+  for (const s of [-1, 1]) { g.add(box(14.6, 0.45, 4.6, M.body, s * 8.4, -0.8, -2.6)); g.add(box(4.9, 0.5, 6.2, M.body, s * 3.55, -0.8, -2.6)); }
+  for (const x of [-10, -5, 5, 10]) {
+    g.add(cylZ(0.75, 0.85, 3.6, M.dark, x, -0.75, -5.2));
+    const p = new THREE.Mesh(new THREE.CircleGeometry(1.9, 20), M.disc); p.position.set(x, -0.75, -7.1); g.add(p); r.props.push(p);
+    const blade = box(0.25, 3.8, 0.1, M.metal, x, -0.75, -7.05); blade.visible = false; g.add(blade); p.userData.blade = blade;
+  }
+  // tail surfaces sit on the skin, clear of the crawlway inside
+  g.add(box(0.35, 4.1, 3.8, M.body, 0, 3.25, 10.5)); g.add(box(0.35, 0.3, 1.9, M.body, 0, 1.08, 11.45)); g.add(box(0.35, 0.75, 4.5, M.body, 0, 1.68, 6.5));
+  for (const s of [-1, 1]) g.add(box(5.7, 0.3, 3, M.body, s * 3.65, 0.8, 10.8));
+  const star = new THREE.Mesh(new THREE.CircleGeometry(1, 20), new THREE.MeshBasicMaterial({ color: 0x24406e })); star.rotation.x = -Math.PI / 2; star.position.set(-11.5, -0.56, -2.6); g.add(star);
+  const starW = new THREE.Mesh(new THREE.CircleGeometry(0.55, 5), new THREE.MeshBasicMaterial({ color: 0xf2f2ec })); starW.rotation.x = -Math.PI / 2; starW.position.set(-11.5, -0.55, -2.6); g.add(starW);
+  for (const s of SEATS) if (s.key === 'top' || s.key === 'ball') { const d = new THREE.Mesh(new THREE.SphereGeometry(0.85, 12, 8), M.glass); d.position.fromArray(s.gun.pos); d.position.y += s.key === 'top' ? -0.5 : 0.5; g.add(d); }
+  if (full) {
+    for (const x of [-5, 5]) { const w = new THREE.Group(); w.add(box(0.25, 1.6, 0.25, M.grey, x, -1.5, -3.6)); const t = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 0.5, 14), M.metal); t.rotation.z = Math.PI / 2; t.position.set(x, -2.15, -3.6); w.add(t); g.add(w); r.gear.push(w); }
+    const tw = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.3, 10), M.metal); tw.rotation.z = Math.PI / 2; tw.position.set(0, -1.2, 9.5); g.add(tw); r.gear.push(tw);
+  }
+  return r;
+}
+function makeCrew(seated) {
+  const g = new THREE.Group();
+  g.add(box(0.46, 0.6, 0.26, M.leather, 0, seated ? 0.75 : 1.12, 0));
+  if (seated) g.add(box(0.42, 0.2, 0.55, M.seat, 0, 0.42, -0.2)); else g.add(box(0.4, 0.82, 0.24, M.seat, 0, 0.41, 0));
+  for (const x of [-0.29, 0.29]) g.add(box(0.11, 0.5, 0.13, M.leather, x, seated ? 0.75 : 1.12, -0.06));
+  const h = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), lam(0xd9b08c)); h.position.y = seated ? 1.2 : 1.57; g.add(h);
+  g.add(box(0.28, 0.1, 0.28, M.seat, 0, seated ? 1.31 : 1.68, 0));
+  return g;
+}
+const turrets = [], crewFig = [], bayBombs = [];
+let air, doorFlaps, ladder, hatch;
+{
+  air = buildAirframe(plane, true);
+  // ---- interior
+  const add = m => { plane.add(m); return m; };
+  const ring = (z, arc = TAU, rad = 1.31, y = 0) => { const m = new THREE.Mesh(new THREE.TorusGeometry(rad, 0.03, 5, 28, arc), M.rib); m.position.set(0, y, z); add(m); };
+  for (const z of [-4.5, -3.8, 1.3, 2.0, 3.2, 3.85, 4.75, 4.97, 5.95]) ring(z);
+  for (const z of [-2.1, -1.2, -0.3]) ring(z, Math.PI);                                                // roof frames over the bomb bay
+  for (const z of [7.2, 8.4, 9.6, 10.8]) ring(z, TAU, 1.31 - (z - 6) * 0.1135, 0.25);
+  for (const a of [0.5, 1.0]) for (const s of [-1, 1]) add(box(0.04, 0.04, 10.9, M.rib, s * 1.3 * Math.sin(a), 1.3 * Math.cos(a), 0.55));   // stringers
+  const bulkhead = (z, rad, y, top) => {
+    const sh = new THREE.Shape(); sh.absarc(0, 0, rad, 0, TAU, false);
+    const h = new THREE.Path(); h.moveTo(-0.3, -0.95 - y); h.lineTo(0.3, -0.95 - y); h.lineTo(0.3, top - y); h.lineTo(-0.3, top - y); h.closePath(); sh.holes.push(h);
+    const m = new THREE.Mesh(new THREE.ShapeGeometry(sh, 20), M.bulk); m.position.set(0, y, z); add(m);
+  };
+  bulkhead(BAY.z0, 1.33, 0, 0.8); bulkhead(BAY.z1, 1.33, 0, 0.8); bulkhead(2.6, 1.33, 0, 0.8); bulkhead(6.3, 1.29, 0.25, 0.65);
+  // floors
+  add(box(1.9, 0.05, 1.6, M.floor, 0, -0.98, -3.8)); add(box(1.9, 0.05, 5.7, M.floor, 0, -0.98, 3.45)); add(box(1.9, 0.05, 1.4, M.floor, 0, -0.98, -8.6));
+  add(box(0.9, 0.05, 4.6, M.floor, 0, -0.62, 8.7));
+  // nose: bombsight, bombardier's seat, chart table
+  add(box(0.3, 0.35, 0.4, M.metal, 0, -0.55, -10.0)); add(cylZ(0.07, 0.07, 0.3, M.grey, 0, -0.3, -10.1, 8)); add(box(0.4, 0.1, 0.4, M.seat, 0, -0.6, -9.2));
+  add(box(0.5, 0.04, 0.8, M.wood, -0.8, -0.3, -8.6));
+  // flight deck
+  add(box(2.6, 0.06, 2.6, M.floor, 0, 0.02, -6.25));
+  for (const s of [-1, 1]) {
+    add(box(1.0, 1.1, 0.05, M.bulk, s * 0.8, 0.57, -7.55)); add(box(1.0, 1.0, 0.05, M.bulk, s * 0.8, -0.45, -4.95));
+    add(box(0.5, 0.12, 0.5, M.seat, s * 0.5, 0.58, -6.5)); add(box(0.5, 0.75, 0.08, M.seat, s * 0.5, 0.95, -6.2)); add(box(0.4, 0.5, 0.4, M.metal, s * 0.5, 0.28, -6.5));
+    add(box(0.05, 0.75, 0.05, M.metal, s * 0.5, 0.75, -7.25)); const y = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.022, 5, 14, Math.PI * 1.3), M.metal); y.rotation.z = -Math.PI * 0.15; y.position.set(s * 0.5, 1.15, -7.22); add(y);
+  }
+  add(box(0.5, 0.3, 0.3, M.floor, 0, -0.7, -4.75)); add(box(0.5, 0.3, 0.3, M.floor, 0, -0.3, -4.95));   // steps up to the deck
+  {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 128; const x = c.getContext('2d');
+    x.fillStyle = '#1b1d1a'; x.fillRect(0, 0, 512, 128);
+    for (let i = 0; i < 12; i++) { const cx = 34 + (i % 6) * 54 + (i % 6 > 2 ? 150 : 0), cy = 36 + Math.floor(i / 6) * 56; x.fillStyle = '#0a0a0a'; x.beginPath(); x.arc(cx, cy, 21, 0, 7); x.fill(); x.strokeStyle = '#c9c3a4'; x.lineWidth = 2; x.stroke(); x.strokeStyle = '#f3eed6'; x.beginPath(); x.moveTo(cx, cy); x.lineTo(cx + Math.cos(i * 1.9) * 16, cy + Math.sin(i * 1.9) * 16); x.stroke(); }
+    x.fillStyle = '#a33a2a'; for (let i = 0; i < 4; i++) x.fillRect(204 + i * 26, 20, 14, 70);
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.4), new THREE.MeshBasicMaterial({ map: tex })); p.position.set(0, 1.28, -7.72); add(p);
+    add(box(1.72, 0.42, 0.05, M.metal, 0, 1.28, -7.76));
+  }
+  // top turret: standing platform and ring
+  add(new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.12, 14), M.metal)).position.set(0, -0.9, -4.0);
+  { const m = add(new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.04, 5, 18), M.metal)); m.rotation.x = Math.PI / 2; m.position.set(0, 1.28, -4.0); }
+  // bomb bay: catwalk, racks, bombs
+  add(box(0.36, 0.08, BAY.z1 - BAY.z0, M.metal, 0, -0.99, (BAY.z0 + BAY.z1) / 2));
+  for (const s of [-1, 1]) {
+    for (const z of [-2.75, -1.2, 0.35]) add(box(0.05, 2.1, 0.05, M.grey, s * 0.42, 0.05, z));
+    for (const y of [-0.5, 0.25]) for (const z of [-2.05, -0.4]) {
+      const b = new THREE.Group(); b.add(cylZ(0.21, 0.21, 1.1, M.bomb, 0, 0, 0, 10)); b.add(cylZ(0.21, 0.02, 0.3, M.yellow, 0, 0, -0.7, 10)); b.add(box(0.5, 0.03, 0.25, M.bomb, 0, 0, 0.6)); b.add(box(0.03, 0.5, 0.25, M.bomb, 0, 0, 0.6));
+      b.position.set(s * 0.74, y, z); add(b); bayBombs.push(b);
+    }
+  }
+  doorFlaps = new THREE.Group(); for (const s of [-1, 1]) doorFlaps.add(box(0.05, 0.75, BAY.z1 - BAY.z0, M.metal, s * 0.78, -1.62, (BAY.z0 + BAY.z1) / 2)); add(doorFlaps);
+  // radio room
+  add(box(0.5, 0.04, 1.1, M.wood, -0.72, -0.25, 1.6)); add(box(0.36, 0.34, 0.5, M.metal, -0.78, -0.05, 1.45)); add(box(0.36, 0.08, 0.36, M.seat, -0.62, -0.55, 2.25));
+  for (const z of [1.0, 1.6, 2.2]) add(cylZ(0.11, 0.11, 0.5, M.yellow, 0.92, 0.25, z, 8));
+  // ball turret hanger
+  for (const x of [-0.42, 0.42]) add(box(0.06, 2.2, 0.06, M.grey, x, 0.1, 3.3));
+  { const m = add(new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.05, 5, 18), M.metal)); m.rotation.x = Math.PI / 2; m.position.set(0, -0.93, 3.3); }
+  // waist: gun posts, ammo boxes
+  for (const s of [-1, 1]) { add(box(0.05, 0.9, 0.05, M.grey, s * 1.05, -0.4, 4.3)); add(box(0.4, 0.3, 0.6, M.wood, s * 0.72, -0.8, s < 0 ? 5.3 : 3.0)); }
+  // crew door and ladder (ladder only when parked)
+  hatch = add(box(0.05, 1.4, 0.9, M.body, 1.3, -0.2, DOOR.z));
+  ladder = new THREE.Group(); for (const z of [-0.25, 0.25]) ladder.add(box(0.05, 2.2, 0.05, M.grey, 1.36, -1.9, DOOR.z + z)); for (let i = 0; i < 5; i++) ladder.add(box(0.05, 0.04, 0.5, M.grey, 1.36, -1.0 - i * 0.42, DOOR.z)); add(ladder);
+  // tail gunner's seat
+  add(box(0.36, 0.1, 0.36, M.seat, 0, -0.3, 10.7));
+  // guns
+  SEATS.forEach(s => {
     if (!s.gun) { turrets.push(null); return; }
     const t = new THREE.Group(); t.position.fromArray(s.gun.pos);
-    if (s.key === 'top' || s.key === 'ball') { const dome = new THREE.Mesh(new THREE.SphereGeometry(0.85, 12, 8), glass); dome.position.y = s.key === 'top' ? -0.5 : 0.5; plane.add(dome); dome.position.add(t.position); }
-    for (const x of [-0.22, 0.22]) t.add(cylZ(0.035, 0.035, 1.5, metal, x, -0.05, -1.5, 6));
+    for (const x of s.key === 'lw' || s.key === 'rw' ? [0] : [-0.22, 0.22]) { t.add(cylZ(0.035, 0.035, 1.5, M.metal, x, -0.05, -0.9, 6)); t.add(box(0.12, 0.14, 0.45, M.metal, x, -0.05, 0)); }
     plane.add(t); turrets.push(t);
   });
+  // crew at their stations: [x, y, z, facing, seated]
+  const FIG = { pilot: [-0.5, 0.2, -6.45, 0, 1], bomb: [0, -0.98, -9.15, 0, 1], top: [0, -0.86, -4.0, 0, 0], lw: [-0.86, -0.95, 4.55, Math.PI / 2, 0], rw: [0.86, -0.95, 4.05, -Math.PI / 2, 0], tail: [0, -0.7, 10.75, Math.PI, 1] };
+  SEATS.forEach(s => {
+    const f = FIG[s.key]; if (!f) { crewFig.push(null); return; }
+    const m = makeCrew(f[4]); m.position.set(f[0], f[1], f[2]); m.rotation.y = f[3]; m.scale.setScalar(0.9); add(m); crewFig.push(m);
+  });
+  const co = makeCrew(1); co.position.set(0.5, 0.2, -6.45); co.scale.setScalar(0.9); add(co); crewFig.copilot = co;
   plane.position.set(0, 3, 500);
 }
+const props = air.props, gearParts = air.gear;
+const engSmokePos = [-10, -5, 5, 10].map(x => new THREE.Vector3(x, -0.4, -3));
+function makeWingman() { const g = new THREE.Group(); buildAirframe(g, false); return g; }
 
 function makeFighter() {
   const g = new THREE.Group(), inner = new THREE.Group(); g.add(inner);
@@ -135,17 +242,11 @@ function makeFighter() {
   g.scale.setScalar(1.3);
   return g;
 }
-function makeSoldier() {
-  const g = new THREE.Group();
-  g.add(box(0.55, 0.8, 0.3, lam(0x6b5a3a), 0, 1.15, 0)); g.add(box(0.5, 0.75, 0.28, lam(0x4d4a36), 0, 0.38, 0));
-  const h = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), lam(0xd9b08c)); h.position.y = 1.75; g.add(h);
-  return g;
-}
 function makeBomb() { const m = cylZ(0.35, 0.35, 1.8, lam(0x2c2f2a), 0, 0, 0, 8); m.scale.setScalar(1.6); return m; }
 function makeChute() {
   const g = new THREE.Group();
   const c = new THREE.Mesh(new THREE.SphereGeometry(3.4, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), lam(0xf0ead8, { side: THREE.DoubleSide })); c.position.y = 5; g.add(c);
-  g.add(box(0.5, 1.6, 0.4, lam(0x5a4a32), 0, 0, 0));
+  g.add(box(0.5, 1.6, 0.4, lam(0x5a4a32), 0, 0, 0)); g.userData.canopy = c;
   return g;
 }
 
@@ -202,9 +303,11 @@ const boomSound = size => noise(1.2, 300, clamp(size / 60, 0.1, 0.5));
 // ------------------------------------------------------------------ network + state
 let ws = null, myId = 0, roomCode = '', snaps = [], latest = null;
 let mySeat = -1, lastSeat = -2, bailed = false, aim = { ay: 0, ap: 0 }, bombsight = false, cockpit = true;
-let foot = null;   // {x, z, yaw, pitch} while walking on the airfield
-let missions = +store.get('b17.missions', 0) || 0, creditedMid = 0, promoted = false;
-const msgs = []; let hitFlash = 0, shake = 0, bailArm = 0;
+let foot = null;   // {x, z, yaw, pitch} walking on the field (world)
+let walk = null;   // {x, z, yaw, pitch} walking inside the fuselage (plane-local)
+let menu = false;  // crew orders menu open
+let missions = +store.get('b17.missions', 0) || 0, creditedMid = 0, resHide = 0;
+const msgs = []; let hitFlash = 0, shake = 0;
 const keys = {}; let mouseFire = false;
 
 $('rank').textContent = `${rankName(missions)} (${missions} mission${missions === 1 ? '' : 's'})`;
@@ -221,11 +324,11 @@ function join() {
   ws.onopen = () => ws.send(JSON.stringify({ t: 'join', name, missions, room: $('room').value }));
   ws.onmessage = e => {
     const m = JSON.parse(e.data);
-    if (m.t === 'welcome') { myId = m.id; roomCode = m.room; location.hash = roomCode; $('lobby').classList.add('hidden'); addMsg(`Crew code ${roomCode} — share this page's link so friends can join.`); }
+    if (m.t === 'welcome') { myId = m.id; roomCode = m.room; location.hash = roomCode; $('lobby').classList.add('hidden'); addMsg(`Crew code ${roomCode}: share this page's link so friends can join.`); }
     else if (m.t === 'err') { $('err').textContent = m.s; ws.close(); }
     else if (m.t === 's') onSnap(m);
   };
-  ws.onclose = () => { const was = myId; ws = null; myId = 0; snaps = []; latest = null; $('lobby').classList.remove('hidden'); $('result').classList.add('hidden'); if (was) $('err').textContent = 'Connection lost. Rejoin to continue.'; };
+  ws.onclose = () => { const was = myId; ws = null; myId = 0; snaps = []; latest = null; foot = walk = null; $('lobby').classList.remove('hidden'); $('result').classList.add('hidden'); if (was) $('err').textContent = 'Connection lost. Rejoin to continue.'; };
 }
 const send = o => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
 function addMsg(s) { msgs.push({ s, t: performance.now() }); if (msgs.length > 7) msgs.shift(); }
@@ -240,27 +343,28 @@ function onSnap(m) {
     else if (e.k === 'hit') { hitFlash = 0.5; shake = 0.35; noise(0.15, 900, 0.25); }
     else if (e.k === 'fhit') { const f = m.f.find(f => f[0] === e.id); if (f) puff(f[1], f[2], f[3], 2.5, 0.35, 0xffd27a, 3, 0); }
   }
-  // result screen + rank
+  // result screen + rank. After a landing the card goes away so the crew can walk around.
   if (m.ph === 'ended' && m.res) {
     if (creditedMid !== m.mid) {
       creditedMid = m.mid; const me = m.res.players.find(p => p.id === myId);
-      promoted = !!me && me.status === 'credit';
       if (me) { missions = me.missions; store.set('b17.missions', missions); }
-      showResult(m.res);
+      showResult(m.res); resHide = m.res.outcome === 'lost' ? Infinity : m.rt + 9000;
     }
-    $('resNext').textContent = `Next mission in ${m.endT}s…`;
+    $('resNext').textContent = `Next mission in ${m.endT}s. Press N to go now.`;
+    if (m.rt > resHide) $('result').classList.add('hidden');
   } else $('result').classList.add('hidden');
 }
 function showResult(res) {
   const T = { success: ['MISSION ACCOMPLISHED', 'Target destroyed and the ship is home. Everyone aboard is promoted.'], aborted: ['MISSION ABORTED', 'You made it back, but the target is still standing. No promotion.'],
     ditched: ['FORCED LANDING', 'The crew survived, but she never made it back to base.'], lost: ['AIRCRAFT LOST', 'The Fortress went down.'] }[res.outcome];
-  $('resTitle').textContent = T[0]; $('resText').textContent = `${T[1]} Fighters shot down: ${res.kills}.`;
+  $('resTitle').textContent = T[0];
+  $('resText').textContent = `${T[1]} Fighters shot down: ${res.kills} by your crew, ${res.fkills} by the formation. Fortresses lost from the formation: ${res.lost}.`;
   $('resRows').innerHTML = '';
   for (const p of res.players) {
     const row = document.createElement('div'); row.className = 'row';
     const a = document.createElement('span'); a.textContent = p.name + (p.id === myId ? ' (you)' : '');
     const b = document.createElement('span');
-    b.textContent = { ground: 'Left behind on the airfield', credit: `Promoted to ${rankName(p.missions)}`, kia: 'Killed in action', bailed: 'Bailed out — survived', none: `Remains ${rankName(p.missions)}` }[p.status];
+    b.textContent = { credit: `Promoted to ${rankName(p.missions)}`, kia: 'Killed in action', bailed: 'Bailed out, survived', none: `Remains ${rankName(p.missions)}` }[p.status];
     b.className = p.status === 'credit' ? 'good' : p.status === 'kia' ? 'bad' : '';
     row.append(a, b); $('resRows').append(row);
   }
@@ -277,25 +381,49 @@ function interp(now) {
   if (a.mid === b.mid) {
     for (const k of ['x', 'y', 'z', 'spd', 'vy', 'thr', 'fuel']) S.pl[k] = lerp(pa[k], pb[k], t);
     for (const k of ['yaw', 'pitch', 'roll']) S.pl[k] = lerpA(pa[k], pb[k], t);
-    const li = (A, B, n0) => B.map(e => { const o = A.find(x => x[0] === e[0]); if (!o) return e; const r = e.slice(); for (let i = n0; i < n0 + 3; i++) r[i] = lerp(o[i], e[i], t); return r; });
-    S.f = li(a.f, b.f, 1); S.b = li(a.b, b.b, 1); S.c = li(a.c, b.c, 1);
+    const li = (A, B, n0, n = 3) => B.map(e => { const o = A.find(x => x[0] === e[0]); if (!o) return e; const r = e.slice(); for (let i = n0; i < n0 + n; i++) r[i] = lerp(o[i], e[i], t); return r; });
+    S.f = li(a.f, b.f, 1); S.b = li(a.b, b.b, 1); S.c = li(a.c, b.c, 1); S.w = li(a.w, b.w, 1); S.wk = li(a.wk, b.wk, 1, 2);
+    S.sl = b.sl.map((v, i) => i < 3 ? lerp(a.sl[i], v, t) : v);
     S.st = b.st.map((s, i) => { const r = s.slice(); r[4] = lerpA(a.st[i][4], s[4], t); r[5] = lerp(a.st[i][5], s[5], t); return r; });
   }
   return S;
 }
 
 // ------------------------------------------------------------------ input
+// the station a walking crewman is standing next to
+function nearSeat() {
+  if (!walk) return -1;
+  let best = -1, bd = 1.1;
+  SEATS.forEach((s, i) => { const d = Math.hypot(walk.x - s.st[0], walk.z - s.st[1]); if (d < bd) { bd = d; best = i; } });
+  return best;
+}
+// the live fighter closest to the middle of the screen
+function markedFighter() {
+  if (!latest) return 0;
+  let best = 0, bd = 260;
+  for (const f of latest.f) { if (f[7] & 2) continue; const p = project(f[1], f[2], f[3]); if (p.behind) continue; const d = Math.hypot(p.x - W / 2, p.y - H / 2); if (d < bd) { bd = d; best = f[0]; } }
+  return best;
+}
+function giveOrder(n) {
+  if (n === 4) { const id = markedFighter(); if (!id) return addMsg('Look at a fighter first, then give the order.'); send({ t: 'act', a: 'order', n, id }); }
+  else send({ t: 'act', a: 'order', n });
+}
 addEventListener('keydown', e => {
   if (!myId) return;
   const k = e.key.toLowerCase(); if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'tab'].includes(k)) e.preventDefault();
   if (keys[k]) return; keys[k] = true;
-  if (k >= '1' && k <= '5') send({ t: 'seat', i: +k - 1 });
-  else if (k === 'f') send({ t: 'act', a: foot ? 'board' : 'exit' });
+  if (k === 'c') menu = !menu;
+  else if (k === 'escape') menu = false;
+  else if (menu && k >= '0' && k <= '9') { giveOrder(+k); menu = false; }
+  else if (k >= '1' && k <= String(SEATS.length)) send({ t: 'seat', i: +k - 1 });
+  else if (k === 'f') send({ t: 'act', a: foot ? 'board' : walk ? 'out' : 'up' });
+  else if (k === 'e' && walk) { const i = nearSeat(); if (i >= 0) send({ t: 'seat', i }); }
   else if (k === 'g') send({ t: 'act', a: 'gear' });
   else if (k === 'o') send({ t: 'act', a: 'doors' });
+  else if (k === 'n') send({ t: 'act', a: 'next' });
+  else if (k === 'r') giveOrder(4);
   else if (k === 'v') cockpit = !cockpit;
   else if (k === 'b' && mySeat === 1) bombsight = !bombsight;
-  else if (k === 'j') { const now = performance.now(); if (now - bailArm < 2500) { send({ t: 'act', a: 'bail' }); bailArm = 0; } else { bailArm = now; addMsg('Press J again to bail out.'); } }
 });
 addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouseFire = false; });
@@ -304,14 +432,16 @@ $('gl').addEventListener('mousedown', () => { if (!myId) return; if (document.po
 addEventListener('mouseup', () => { mouseFire = false; });
 addEventListener('mousemove', e => {
   if (document.pointerLockElement !== $('gl')) return;
-  if (foot) { foot.yaw -= e.movementX * 0.0025; foot.pitch = clamp(foot.pitch - e.movementY * 0.0025, -1.3, 1.3); return; }
+  const w = foot || walk;
+  if (w) { w.yaw -= e.movementX * 0.0025; w.pitch = clamp(w.pitch - e.movementY * 0.0025, -1.3, 1.3); return; }
   if (mySeat < 1) return;
   const s = bombsight ? 0 : 0.0022; aim.ay -= e.movementX * s; aim.ap -= e.movementY * s;
 });
 const K = (...ks) => ks.some(k => keys[k]) ? 1 : 0;
 setInterval(() => {
   if (!myId) return;
-  if (foot) { send({ t: 'in', fx: foot.x, fz: foot.z, fy: foot.yaw, use: K('e') }); return; }
+  if (foot) { send({ t: 'in', fx: foot.x, fz: foot.z, fy: foot.yaw }); return; }
+  if (walk) { send({ t: 'in', lx: walk.x, lz: walk.z, ly: walk.yaw }); return; }
   if (mySeat < 0) return;
   const m = { t: 'in', p: 0, r: 0, y: 0, th: 0, br: 0, ay: aim.ay, ap: aim.ap, f: 0, d: 0 };
   if (mySeat === 0) { m.p = K('s', 'arrowdown') - K('w', 'arrowup'); m.r = K('a', 'arrowleft') - K('d', 'arrowright'); m.y = K('q') - K('e'); m.th = K('shift', '=', '+') - K('z', '-'); m.br = K('b'); }
@@ -321,37 +451,51 @@ setInterval(() => {
 }, 50);
 
 // ------------------------------------------------------------------ world update
-const objs = { f: new Map(), b: new Map(), c: new Map(), p: new Map() };
-function sync(map, list, make, upd) {
+const objs = { f: new Map(), b: new Map(), c: new Map(), p: new Map(), w: new Map(), wk: new Map() };
+function sync(map, list, make, upd, parent = scene) {
   const seen = new Set();
-  for (const e of list) { seen.add(e[0]); let o = map.get(e[0]); if (!o) { o = make(); scene.add(o); map.set(e[0], o); } o.position.set(e[1], e[2], e[3]); upd && upd(o, e); }
-  for (const [id, o] of map) if (!seen.has(id)) { scene.remove(o); map.delete(id); }
+  for (const e of list) { seen.add(e[0]); let o = map.get(e[0]); if (!o) { o = make(); parent.add(o); map.set(e[0], o); } o.position.set(e[1], e[2], e[3]); upd && upd(o, e); }
+  for (const [id, o] of map) if (!seen.has(id)) { parent.remove(o); map.delete(id); }
 }
 const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), q1 = new THREE.Quaternion(), e1 = new THREE.Euler();
-let fxT = 0, propA = 0, gunT = 0;
+let fxT = 0, gunT = 0;
 function gunWorld(i, ay, ap, outPos, outDir) {
   outPos.fromArray(SEATS[i].gun.pos).applyQuaternion(plane.quaternion).add(plane.position);
   outDir.fromArray(aimDir(ay, ap)).applyQuaternion(plane.quaternion);
 }
+function look(w, dt) { const lr = 1.6 * dt; w.yaw += (K('arrowleft') - K('arrowright')) * lr; w.pitch = clamp(w.pitch + (K('arrowup') - K('arrowdown')) * lr, -1.3, 1.3); }
 function updateWorld(S, dt) {
   const pl = S.pl;
   plane.visible = !pl.crashed && !(bombsight && mySeat > 0);
   plane.position.set(pl.x, pl.y, pl.z); plane.rotation.set(pl.pitch, pl.yaw, pl.roll, 'YXZ'); plane.updateMatrixWorld();
   for (const g of gearParts) g.visible = !!pl.gear;
-  bayDoor.visible = !pl.doors;
-  propA += dt * (8 + pl.thr * 40);
+  for (const d of air.doors) d.visible = !pl.doors;
+  doorFlaps.visible = !!pl.doors; ladder.visible = !!pl.ground; hatch.visible = !pl.ground;
+  bayBombs.forEach((b, i) => { b.visible = i < pl.bombs; });
   props.forEach((p, i) => { const on = pl.eng[i] > 0 && pl.fuel > 0; p.visible = on; p.userData.blade.visible = !on; });
-  // my seat
-  mySeat = S.st.findIndex(s => s[0] === myId); bailed = mySeat < 0 && S.c.some(c => c[4] === myId);
-  const mf = S.ft.find(f => f[0] === myId);
+  // where am I: at a station, walking inside, on the field, or gone
+  mySeat = S.st.findIndex(s => s[0] === myId); bailed = S.c.some(c => c[4] === myId);
+  const mf = S.ft.find(f => f[0] === myId), mw = S.wk.find(f => f[0] === myId);
   if (mf && !foot) foot = { x: mf[1], z: mf[2], yaw: mf[3], pitch: 0 }; else if (!mf) foot = null;
+  if (mw && !walk) walk = { x: mw[1], z: mw[2], yaw: mw[3], pitch: 0 }; else if (!mw) walk = null;
   if (foot) {
-    const lr = 1.6 * dt; foot.yaw += (K('arrowleft') - K('arrowright')) * lr; foot.pitch = clamp(foot.pitch + (K('arrowup') - K('arrowdown')) * lr, -1.3, 1.3);
+    look(foot, dt);
     const fw = K('w') - K('s'), st = K('d') - K('a'), sp = (K('shift') ? 10 : 6) * dt / (fw && st ? 1.414 : 1);
-    foot.x = clamp(foot.x + (-Math.sin(foot.yaw) * fw + Math.cos(foot.yaw) * st) * sp, -400, 400);
-    foot.z = clamp(foot.z + (-Math.cos(foot.yaw) * fw - Math.sin(foot.yaw) * st) * sp, 100, 900);
+    foot.x = clamp(foot.x + (-Math.sin(foot.yaw) * fw + Math.cos(foot.yaw) * st) * sp, pl.x - 150, pl.x + 150);
+    foot.z = clamp(foot.z + (-Math.cos(foot.yaw) * fw - Math.sin(foot.yaw) * st) * sp, pl.z - 150, pl.z + 150);
   }
-  sync(objs.p, S.ft.filter(f => f[0] !== myId).map(f => [f[0], f[1], 0.4, f[2], f[3]]), makeSoldier, (o, e) => { o.rotation.y = e[4]; });
+  if (walk) {
+    look(walk, dt);
+    const fw = K('w') - K('s'), st = K('d') - K('a'), sp = (K('shift') ? 4.5 : 2.6) * dt / (fw && st ? 1.414 : 1);
+    const nx = walk.x + (-Math.sin(walk.yaw) * fw + Math.cos(walk.yaw) * st) * sp;
+    let nz = clamp(walk.z + (-Math.cos(walk.yaw) * fw - Math.sin(walk.yaw) * st) * sp, WALK_Z0, WALK_Z1);
+    if (Math.abs(walk.x) > halfW(nz, pl.doors) + 0.12) nz = walk.z;     // line up with the doorway first
+    walk.z = nz; const hw = halfW(nz, pl.doors); walk.x = clamp(nx, -hw, hw);
+  }
+  sync(objs.p, S.ft.filter(f => f[0] !== myId).map(f => [f[0], f[1], 0.4, f[2], f[3]]), () => makeCrew(0), (o, e) => { o.rotation.y = e[4]; });
+  sync(objs.wk, S.wk.filter(f => f[0] !== myId).map(f => [f[0], f[1], eyeY(f[2]) - 1.5, f[2], f[3]]), () => { const m = makeCrew(0); m.scale.setScalar(0.9); return m; }, (o, e) => { o.rotation.y = e[4]; }, plane);
+  S.st.forEach((s, i) => { const f = crewFig[i]; if (f) f.visible = s[0] ? s[0] !== myId : !s[7]; });
+  crewFig.copilot.visible = !S.st[0][7];
   if (mySeat !== lastSeat) { lastSeat = mySeat; bombsight = false; if (mySeat > 0) { aim.ay = S.st[mySeat][4]; aim.ap = S.st[mySeat][5]; } }
   if (mySeat > 0) {
     const ar = 1.4 * dt; aim.ay += (K('arrowleft') - K('arrowright')) * ar; aim.ap += (K('arrowup') - K('arrowdown')) * ar;
@@ -362,7 +506,7 @@ function updateWorld(S, dt) {
   S.st.forEach((s, i) => {
     const t = turrets[i]; if (!t) return;
     const ay = i === mySeat ? aim.ay : s[4], ap = i === mySeat ? aim.ap : s[5];
-    t.rotation.set(ap, ay, 0, 'YXZ'); t.visible = !s[7];
+    t.rotation.set(ap, ay, 0, 'YXZ');
     if (s[6] && shoot) { gunWorld(i, ay, ap, v1, v2); v1.addScaledVector(v2, 2); v2.multiplyScalar(BULLET_SPD); v2.x += pv[0]; v2.y += pv[1]; v2.z += pv[2]; spawnTracer(v1, v2, false); gunSound(i === mySeat); }
   });
   // fighters
@@ -372,13 +516,20 @@ function updateWorld(S, dt) {
     if (fx && (e[7] & 2)) puff(e[1], e[2], e[3], 3, 2.2, 0x2a2a2a, 1.2, 1);
     if (shoot && (e[7] & 1)) { v1.set(e[1], e[2], e[3]); v2.set(e[4], e[5], e[6]).normalize().multiplyScalar(700); v2.x += (Math.random() - 0.5) * 25; v2.y += (Math.random() - 0.5) * 25; spawnTracer(v1, v2, true); noise(0.07, 1200, 0.04); }
   });
+  // the rest of the formation
+  sync(objs.w, S.w, makeWingman, (o, e) => {
+    o.rotation.set(e[6], e[4], e[5], 'YXZ');
+    if (fx && (e[7] & 2)) puff(e[1], e[2], e[3], 5, 3, 0x1c1c1c, 1.1, 2);
+    const f = e[8] && shoot && Math.random() < 0.6 && S.f.find(f => f[0] === e[8]);
+    if (f) { v1.set(e[1], e[2] + 1, e[3]); v2.set(f[1] - e[1] + (Math.random() - 0.5) * 30, f[2] - e[2] + (Math.random() - 0.5) * 30, f[3] - e[3] + (Math.random() - 0.5) * 30).normalize().multiplyScalar(BULLET_SPD); spawnTracer(v1, v2, false); }
+  });
   sync(objs.b, S.b, makeBomb, o => { o.rotation.x = Math.PI / 2 + 0.6; });
-  sync(objs.c, S.c, makeChute);
+  sync(objs.c, S.c, makeChute, (o, e) => { o.userData.canopy.visible = !!e[5]; });
   // smoke
   if (fx && !pl.crashed) {
     pl.eng.forEach((h, i) => { if (h < 40) { v1.copy(engSmokePos[i]).applyMatrix4(plane.matrixWorld); puff(v1.x, v1.y, v1.z, h <= 0 ? 2.2 : 1.2, 2, h <= 0 ? 0x1c1c1c : 0x777777, 1.3, 1); } });
-    if (pl.doomed) puff(pl.x, pl.y, pl.z, 4, 3, 0x161616, 1.2, 2);
-    else if (pl.leak) { v1.set(3, -0.5, 0).applyMatrix4(plane.matrixWorld); puff(v1.x, v1.y, v1.z, 0.8, 1.2, 0xd8d8d0, 1.5, 0); }
+    if (pl.doomed) { v1.set(0, 1, 16).applyMatrix4(plane.matrixWorld); puff(v1.x, v1.y, v1.z, 4, 3, 0x161616, 1.2, 2); }
+    else if (pl.leak) { v1.set(3, -0.9, 0).applyMatrix4(plane.matrixWorld); puff(v1.x, v1.y, v1.z, 0.8, 1.2, 0xd8d8d0, 1.5, 0); }
   }
   // target
   target.position.set(S.tg[0], 0, S.tg[1]); target.visible = true;
@@ -397,6 +548,9 @@ function updateCamera(S, dt) {
   const myChute = S.c.find(c => c[4] === myId);
   if (foot) {
     setFov(70); camera.position.set(foot.x, 2.1, foot.z); camera.rotation.set(foot.pitch, foot.yaw, 0, 'YXZ');
+  } else if (walk) {
+    setFov(78); camera.position.set(walk.x, eyeY(walk.z), walk.z).applyMatrix4(plane.matrixWorld);
+    camera.quaternion.copy(plane.quaternion).multiply(q1.setFromEuler(e1.set(walk.pitch, walk.yaw, 0, 'YXZ')));
   } else if (myChute && S.ph !== 'ended') {
     setFov(65); camera.position.set(myChute[1] + 6, myChute[2] + 3, myChute[3] + 12); camera.lookAt(pl.x, pl.y, pl.z);
   } else if (mySeat > 0 && bombsight) {
@@ -404,17 +558,17 @@ function updateCamera(S, dt) {
     camera.position.set(pl.x, pl.y - 2.5, pl.z); camera.up.set(-Math.sin(pl.yaw), 0, -Math.cos(pl.yaw)); camera.lookAt(impact.x, 0, impact.z);
   } else if (mySeat > 0) {
     setFov(70); gunWorld(mySeat, aim.ay, aim.ap, v1, v2);
-    v2.set(0, SEATS[mySeat].key === 'ball' ? -0.4 : 0.45, 0).applyQuaternion(plane.quaternion);
+    v2.set(0, SEATS[mySeat].gun.eye, 0).applyQuaternion(plane.quaternion);
     camera.position.copy(v1).add(v2);
     camera.quaternion.copy(plane.quaternion).multiply(q1.setFromEuler(e1.set(aim.ap, aim.ay, 0, 'YXZ')));
   } else if (mySeat === 0 && cockpit) {
-    setFov(75); camera.position.set(-0.45, 1.5, -7.3).applyMatrix4(plane.matrixWorld); camera.quaternion.copy(plane.quaternion);
+    setFov(75); camera.position.set(-0.5, 1.62, -6.6).applyMatrix4(plane.matrixWorld); camera.quaternion.copy(plane.quaternion);
   } else {
     setFov(65); camYaw += wrap(pl.yaw - camYaw) * Math.min(1, 3.5 * dt);
     camera.position.set(pl.x + Math.sin(camYaw) * 42, Math.max(1.5, pl.y + 11 - Math.sin(pl.pitch) * 20), pl.z + Math.cos(camYaw) * 42);
     camera.lookAt(pl.x - Math.sin(pl.yaw) * 10, pl.y + 3, pl.z - Math.cos(pl.yaw) * 10);
   }
-  if (shake > 0) { shake -= dt; camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake; }
+  if (shake > 0) { shake -= dt; camera.position.x += (Math.random() - 0.5) * shake * (walk ? 0.2 : 1); camera.position.y += (Math.random() - 0.5) * shake * (walk ? 0.2 : 1); }
   camera.updateMatrixWorld();
 }
 
@@ -427,7 +581,7 @@ function marker(x, y, z, color, label, dist) {
   if (off) { let dx = sx - W / 2, dy = sy - H / 2; if (p.behind) { dx = -dx; dy = -dy; } const k = Math.min((W / 2 - m) / Math.abs(dx || 1e-3), (H / 2 - m) / Math.abs(dy || 1e-3)); sx = W / 2 + dx * k; sy = H / 2 + dy * k; }
   ctx.strokeStyle = ctx.fillStyle = color; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(sx, sy - 9); ctx.lineTo(sx + 9, sy); ctx.lineTo(sx, sy + 9); ctx.lineTo(sx - 9, sy); ctx.closePath(); off ? ctx.fill() : ctx.stroke();
-  ctx.font = `700 11px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText(`${label} ${(dist / 1000).toFixed(1)}km`, clamp(sx, 50, W - 50), sy + (sy > H - 60 ? -14 : 24));
+  ctx.font = `700 11px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText(`${label} ${dist < 1000 ? Math.round(dist) + 'm' : (dist / 1000).toFixed(1) + 'km'}`, clamp(sx, 50, W - 50), sy + (sy > H - 60 ? -14 : 24));
 }
 function label(x, y, z, color, text) {
   const p = project(x, y, z); if (p.behind) return;
@@ -436,47 +590,48 @@ function label(x, y, z, color, text) {
 }
 function panel(x, y, w, h) { ctx.fillStyle = PANEL; ctx.fillRect(x, y, w, h); ctx.strokeStyle = 'rgba(138,132,85,.7)'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); }
 function bar(x, y, w, v, color) { ctx.fillStyle = 'rgba(255,255,255,.14)'; ctx.fillRect(x, y, w, 7); ctx.fillStyle = color; ctx.fillRect(x, y, w * clamp(v, 0, 1), 7); }
+function strip(t, y, color = '#c9c3a4', size = 11) { ctx.textAlign = 'center'; ctx.font = `600 ${size}px ${FONT}`; const w = Math.min(W - 16, ctx.measureText(t).width + 20); ctx.fillStyle = PANEL; ctx.fillRect(W / 2 - w / 2, y - 14, w, 20); ctx.fillStyle = color; ctx.fillText(t, W / 2, y, w - 12); }
 
 function objective(S) {
   const pl = S.pl, pilot = mySeat === 0;
-  if (foot && S.ph !== 'ground') return 'The ship left without you. Wait for her to come home.';
-  if (bailed) return 'You bailed out. Hang on to your chute…';
-  if (S.ph === 'ground') {
-    const ready = pl.fuel >= 99 && pl.bombs >= BOMBS_MAX && S.st.every((s, i) => !SEATS[i].gun || s[3] >= AMMO_MAX - 1);
-    if (foot) return ready ? 'She is loaded. Walk back to the plane and press F to climb aboard' : 'Walk into a ring and hold E: FUEL truck, AMMO crates, BOMB cart';
-    if (!ready && pl.spd < 0.5) return 'Press F to climb out, then load fuel, ammo and bombs on the runway';
-    return pilot ? 'Take off: hold SHIFT for full throttle, pull back (S) at 110 mph' : 'Stand by for takeoff';
+  if (bailed) return 'You jumped. Hang on to your chute…';
+  if (S.ph === 'ended') {
+    if (pl.crashed) return 'The Fortress is lost.';
+    if (foot) return `On the field. F at the crew door climbs in · next mission in ${S.endT}s (N)`;
+    return `Mission over. Crew door is aft on the right (F) · next mission in ${S.endT}s (N)`;
   }
-  if (pl.doomed) return 'WE ARE GOING DOWN — PRESS J TWICE TO BAIL OUT';
-  if (S.tg[2] > 0 && pl.bombs > 0) return mySeat === 1 ? 'Open the bay doors (O), use the bombsight (B), drop on the target (SPACE)' : 'Fly to the TARGET and bomb it';
-  if (S.tg[2] > 0) return 'Bombs gone but the target survived. Return to BASE.';
-  return pilot ? 'Target destroyed! Return to BASE: gear down (G), land, brake (B) to a stop' : 'Target destroyed! Hold them off until we are home.';
+  if (pl.doomed) return 'WE ARE GOING DOWN. Get to the bomb bay and jump through the open doors!';
+  if (S.sl[3] === 0 && S.tg[2] > 0 && pl.bombs > 0) return pilot ? 'Hold your slot in the formation to the TARGET. Fight off the fighters.' : mySeat === 1 ? 'Bay doors (O), bombsight (B), drop on the target (SPACE)' : 'Fight off the fighters. The formation is inbound to the TARGET.';
+  if (S.tg[2] > 0) return 'The target survived. Stay with the formation and return to BASE.';
+  return pilot ? 'Target destroyed! Follow the formation home, then land at BASE: gear (G), brake (B)' : 'Target destroyed! Hold them off until we are home.';
 }
-const HELP = [
-  'W/S pitch · A/D roll · Q/E rudder · SHIFT/Z throttle · G gear · B brake · V view',
-  'MOUSE aim · CLICK fire · B bombsight · O bay doors · SPACE drop bombs',
-  'MOUSE aim (or arrows) · CLICK / SPACE fire', 'MOUSE aim (or arrows) · CLICK / SPACE fire', 'MOUSE aim (or arrows) · CLICK / SPACE fire'];
+const GUNHELP = 'MOUSE aim (or arrows) · CLICK / SPACE fire';
+const HELP = { pilot: 'W/S pitch · A/D roll · Q/E rudder · SHIFT/Z throttle · G gear · B brake · V view', bomb: 'MOUSE aim · CLICK fire · B bombsight · O bay doors · SPACE drop bombs' };
+const FIRE = ['fire at will', 'close range', 'HOLD FIRE'], BOMB = ['auto', 'HOLD', 'SALVO'], AP = ['formation', 'heading home'];
 
 function drawHUD(S, dt) {
   ctx.clearRect(0, 0, W, H); if (!S) return;
-  const pl = S.pl, small = W < 760;
-  const dT = Math.hypot(S.tg[0] - pl.x, S.tg[1] - pl.z), dB = Math.hypot(pl.x, pl.z);
-  // world markers
-  if (S.tg[2] > 0) marker(S.tg[0], 20, S.tg[1], '#ffb347', 'TARGET', dT);
-  if (dB > 1500) marker(0, 5, -300, '#8fd0ff', 'BASE', dB);
-  const gunner = mySeat > 0 && !bombsight && !foot, pv = planeVel(pl);
+  const pl = S.pl, small = W < 760, inside = !!walk, cx = W / 2, cy = H / 2;
+  const dT = Math.hypot(S.tg[0] - pl.x, S.tg[1] - pl.z), dB = Math.hypot(pl.x, pl.z), dS = Math.hypot(S.sl[0] - pl.x, S.sl[1] - pl.y, S.sl[2] - pl.z);
+  // world markers (not while walking around inside)
+  if (!inside) {
+    if (S.tg[2] > 0) marker(S.tg[0], 20, S.tg[1], '#ffb347', 'TARGET', dT);
+    if (dB > 1500) marker(0, 5, -300, '#8fd0ff', 'BASE', dB);
+    if (mySeat === 0 && S.ph === 'flight' && S.sl[3] < 2 && dS > 25) marker(S.sl[0], S.sl[1], S.sl[2], '#b7f0a0', 'YOUR SLOT', dS);
+  }
+  const gunner = mySeat > 0 && !bombsight, pv = planeVel(pl);
   for (const f of S.f) {
     if (f[7] & 2) continue;
     const d = Math.hypot(f[1] - camera.position.x, f[2] - camera.position.y, f[3] - camera.position.z); if (d > 3500) continue;
     const p = project(f[1], f[2], f[3]); if (p.behind) continue;
-    const r = clamp(9000 / d, 7, 26); ctx.strokeStyle = '#ff5a4a'; ctx.lineWidth = 1.5; ctx.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
+    const r = clamp(9000 / d, 7, 26), mark = f[0] === S.od[3]; ctx.strokeStyle = mark ? '#ffe04a' : '#ff5a4a'; ctx.lineWidth = mark ? 3 : 1.5; ctx.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
+    if (mark) { ctx.fillStyle = '#ffe04a'; ctx.font = `700 10px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText('MARKED', p.x, p.y - r - 5); }
     if (gunner && d < 1100) {
       const t = d / BULLET_SPD, q = project(f[1] + (f[4] - pv[0]) * t, f[2] + (f[5] - pv[1]) * t, f[3] + (f[6] - pv[2]) * t);
-      if (!q.behind) { ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(q.x, q.y, 5, 0, 7); ctx.stroke(); ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
+      if (!q.behind) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(q.x, q.y, 5, 0, 7); ctx.stroke(); ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
     }
   }
   // reticles
-  const cx = W / 2, cy = H / 2;
   if (gunner) {
     ctx.strokeStyle = AMBER; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, 22, 0, 7); ctx.moveTo(cx - 34, cy); ctx.lineTo(cx - 8, cy); ctx.moveTo(cx + 8, cy); ctx.lineTo(cx + 34, cy); ctx.moveTo(cx, cy - 34); ctx.lineTo(cx, cy - 8); ctx.moveTo(cx, cy + 8); ctx.lineTo(cx, cy + 34); ctx.stroke();
     ctx.fillStyle = AMBER; ctx.fillRect(cx - 1, cy - 1, 2, 2);
@@ -487,27 +642,39 @@ function drawHUD(S, dt) {
     ctx.beginPath(); ctx.arc(cx, cy, 26, 0, 7); ctx.stroke();
     ctx.fillStyle = AMBER; ctx.font = `700 13px ${FONT}`; ctx.textAlign = 'center';
     ctx.fillText(`BOMBSIGHT · impact in ${impact ? impact.t.toFixed(1) : '--'}s · doors ${pl.doors ? 'OPEN' : 'CLOSED (O)'} · ${pl.bombs} bombs`, cx, cy + R - 18);
-  }
+  } else if (foot || walk) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.stroke(); }
   // objective
   ctx.textAlign = 'center'; ctx.font = `700 ${small ? 12 : 15}px ${FONT}`;
-  const obj = objective(S), ow = Math.min(W - 24, ctx.measureText(obj).width + 28);
-  panel(cx - ow / 2, 10, ow, 30); ctx.fillStyle = pl.doomed ? '#ff7a5a' : AMBER; ctx.fillText(obj, cx, 30, ow - 16);
+  const obj = objective(S), ow = Math.min(W < 1250 ? W - 24 : W - 300, ctx.measureText(obj).width + 28);
+  const ocx = W < 1250 ? cx : Math.min(cx, W - 290 - ow / 2);
+  panel(ocx - ow / 2, 10, ow, 30); ctx.fillStyle = pl.doomed ? '#ff7a5a' : AMBER; ctx.fillText(obj, ocx, 30, ow - 16);
   // crew list
   ctx.font = `600 12px ${FONT}`; ctx.textAlign = 'left';
-  const cw = 246, cx0 = W - cw - 10, cy0 = W < 1150 ? 48 : 10; panel(cx0, cy0, cw, 20 + 18 * 5 + 20);
-  ctx.fillStyle = '#a9a37f'; ctx.fillText(`CREW ${roomCode} · keys 1-5 change seat`, cx0 + 8, cy0 + 15);
+  const n = SEATS.length, cw = 262, cx0 = W - cw - 10, cy0 = W < 1250 ? 48 : 10; panel(cx0, cy0, cw, 20 + 18 * n + 74);
+  ctx.fillStyle = '#a9a37f'; ctx.fillText(`CREW ${roomCode} · keys 1-${n} take a station`, cx0 + 8, cy0 + 15);
   S.st.forEach((s, i) => {
     const me = i === mySeat, y = cy0 + 34 + i * 18;
-    ctx.fillStyle = s[7] ? '#8a6a5a' : me ? AMBER : s[0] ? '#e8e2c8' : '#9aa08a';
-    const who = s[7] ? 'bailed out' : s[0] ? `${rankAbbr(s[2])} ${s[1]}` : 'bot';
-    ctx.fillText(`${me ? '>' : ' '}${i + 1} ${SEATS[i].name.padEnd(11)} ${who}`.slice(0, 31), cx0 + 6, y);
-    if (SEATS[i].gun && !s[7]) bar(cx0 + cw - 34, y - 7, 26, s[3] / AMMO_MAX, s[3] < 80 ? '#ff7a5a' : '#b7c97a');
+    ctx.fillStyle = me ? AMBER : s[0] ? '#e8e2c8' : s[7] ? '#8a6a5a' : '#9aa08a';
+    const who = s[0] ? `${rankAbbr(s[2])} ${s[1]}` : s[7] ? 'bailed out' : 'bot';
+    ctx.fillText(`${me ? '>' : ' '}${i + 1} ${SEATS[i].name.padEnd(11)} ${who}`.slice(0, 33), cx0 + 6, y);
+    if (SEATS[i].gun && (s[0] || !s[7])) bar(cx0 + cw - 34, y - 7, 26, s[3] / AMMO_MAX, s[3] < 80 ? '#ff7a5a' : '#b7c97a');
   });
-  ctx.fillStyle = '#a9a37f'; ctx.fillText(`You: ${rankName(missions)}${foot ? ' · on foot' : ''}`, cx0 + 8, cy0 + 34 + 5 * 18);
+  let y = cy0 + 34 + n * 18;
+  ctx.fillStyle = '#a9a37f'; ctx.fillText(`You: ${rankName(missions)}${foot ? ' · on the field' : walk ? ' · walking' : ''}`, cx0 + 8, y, cw - 14);
+  ctx.fillStyle = S.od[0] ? '#ffb347' : '#b7c97a'; ctx.fillText(`Gunners: ${FIRE[S.od[0]]}${S.od[3] ? ' · marked' : ''}`, cx0 + 8, y += 18);
+  ctx.fillStyle = S.od[1] ? '#ffb347' : '#b7c97a'; ctx.fillText(`Bombardier: ${BOMB[S.od[1]]} · Copilot: ${AP[S.od[2]]}`, cx0 + 8, y += 18, cw - 14);
+  ctx.fillStyle = '#a9a37f'; ctx.fillText('C = crew orders', cx0 + 8, y += 18);
+  // crew orders menu
+  if (menu) {
+    const mw = Math.min(W - 20, 400), mh = 34 + ORDERS.length * 19, mx0 = 10, my0 = Math.max(48, cy - mh / 2); panel(mx0, my0, mw, mh);
+    ctx.fillStyle = AMBER; ctx.font = `700 13px ${FONT}`; ctx.fillText('CREW ORDERS: press a number (C closes)', mx0 + 10, my0 + 19);
+    ctx.font = `600 12px ${FONT}`;
+    ORDERS.forEach((o, i) => { const on = (i >= 1 && i <= 3 && S.od[0] === i - 1) || (i >= 5 && i <= 7 && S.od[1] === i - 5) || (i >= 8 && S.od[2] === i - 8) || (i === 0 && pl.doors); ctx.fillStyle = on ? '#b7f0a0' : '#e8e2c8'; ctx.fillText(`${i}  ${o}${i === 0 ? (pl.doors ? ' (open now)' : ' (closed now)') : ''}`, mx0 + 10, my0 + 40 + i * 19, mw - 20); });
+  }
   // instruments
   const ih = 132, iw = 250, ix = 10, iy = H - ih - 10; panel(ix, iy, iw, ih);
   const hdg = ((Math.round(-pl.yaw * 180 / Math.PI) % 360) + 360) % 360;
-  ctx.font = `700 13px ${FONT}`; ctx.fillStyle = '#e8e2c8';
+  ctx.font = `700 13px ${FONT}`; ctx.fillStyle = '#e8e2c8'; ctx.textAlign = 'left';
   ctx.fillText(`SPD ${String(Math.round(pl.spd * 2.237)).padStart(3)} mph   ALT ${String(Math.round((pl.y - 3) * 3.28)).padStart(5)} ft`, ix + 10, iy + 20);
   ctx.fillText(`HDG ${String(hdg).padStart(3, '0')}°      GEAR ${pl.gear ? 'DOWN' : 'UP'}`, ix + 10, iy + 38);
   ctx.font = `600 11px ${FONT}`;
@@ -521,6 +688,7 @@ function drawHUD(S, dt) {
   const mp = (x, z) => { let dx = (x - pl.x) * sc, dy = (z - pl.z) * sc; const l = Math.hypot(dx, dy), mxl = ms / 2 - 7; if (l > mxl) { dx *= mxl / l; dy *= mxl / l; } return [mx + mc + dx, my + mc + dy]; };
   let [ax, ay] = mp(0, -300); ctx.fillStyle = '#8fd0ff'; ctx.fillRect(ax - 4, ay - 4, 8, 8);
   if (S.tg[2] > 0) { [ax, ay] = mp(S.tg[0], S.tg[1]); ctx.fillStyle = '#ffb347'; ctx.beginPath(); ctx.moveTo(ax, ay - 6); ctx.lineTo(ax + 6, ay + 5); ctx.lineTo(ax - 6, ay + 5); ctx.fill(); }
+  ctx.fillStyle = '#b7f0a0'; for (const b of S.w) if (!(b[7] & 2)) { [ax, ay] = mp(b[1], b[3]); ctx.fillRect(ax - 1.5, ay - 1.5, 3, 3); }
   ctx.fillStyle = '#ff5a4a'; for (const f of S.f) if (!(f[7] & 2)) { [ax, ay] = mp(f[1], f[3]); ctx.fillRect(ax - 2, ay - 2, 4, 4); }
   ctx.save(); ctx.translate(mx + mc, my + mc); ctx.rotate(-pl.yaw); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(5, 6); ctx.lineTo(0, 3); ctx.lineTo(-5, 6); ctx.fill(); ctx.restore();
   ctx.fillStyle = '#a9a37f'; ctx.font = `600 10px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText('N', mx + mc, my + 11);
@@ -528,17 +696,25 @@ function drawHUD(S, dt) {
   ctx.textAlign = 'left'; ctx.font = `600 12px ${FONT}`; const now = performance.now(); let myy = iy - 12;
   for (let i = msgs.length - 1; i >= 0; i--) { const a = 1 - (now - msgs[i].t - 9000) / 2000; if (a <= 0) continue; ctx.globalAlpha = clamp(a, 0, 1); const w = Math.min(W - 20, ctx.measureText(msgs[i].s).width + 12); ctx.fillStyle = PANEL; ctx.fillRect(10, myy - 13, w, 18); ctx.fillStyle = '#f3eed6'; ctx.fillText(msgs[i].s, 16, myy, W - 32); myy -= 20; }
   ctx.globalAlpha = 1;
-  // help line
+  // prompts and help line
+  let help = '';
   if (foot) {
-    const ammo = Math.min(...S.st.filter((s, i) => SEATS[i].gun).map(s => s[3])) / AMMO_MAX;
-    const tag = (k, y, c, name, v) => { const d = Math.hypot(foot.x - STN[k][0], foot.z - STN[k][1]); label(STN[k][0], y, STN[k][1], c, `${name} ${Math.round(v * 100)}%${d < STN_R ? (v >= 1 ? ' · full' : ' · hold E') : ''}`); };
-    tag('fuel', 4.5, '#ffb347', 'FUEL', pl.fuel / 100); tag('ammo', 3.5, AMBER, 'AMMO', ammo); tag('bombs', 3.5, '#ff7a5a', 'BOMBS', pl.bombs / BOMBS_MAX);
-    const dp = Math.hypot(foot.x - pl.x, foot.z - pl.z);
-    if (!pl.crashed && pl.ground) label(pl.x, pl.y + 5, pl.z, '#8fd0ff', dp < 25 ? 'B-17 · press F to board' : 'B-17');
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.stroke();
-    if (!small) { ctx.textAlign = 'center'; ctx.font = `600 11px ${FONT}`; const t = 'ON FOOT: W/A/S/D walk · SHIFT run · MOUSE or arrows look · E load (in a ring) · F board (near the plane)'; const w = ctx.measureText(t).width + 20; ctx.fillStyle = PANEL; ctx.fillRect(cx - w / 2, H - 28, w, 20); ctx.fillStyle = '#c9c3a4'; ctx.fillText(t, cx, H - 14); }
-  }
-  if (mySeat >= 0 && !small) { ctx.textAlign = 'center'; ctx.font = `600 11px ${FONT}`; const t = `${SEATS[mySeat].name.toUpperCase()}: ${HELP[mySeat]} · F climb out (parked) · J J bail out`; const w = ctx.measureText(t).width + 20; ctx.fillStyle = PANEL; ctx.fillRect(cx - w / 2, H - 28, w, 20); ctx.fillStyle = '#c9c3a4'; ctx.fillText(t, cx, H - 14); }
+    const o = Math.hypot(foot.x - pl.x, foot.z - pl.z); v1.set(DOOR.x + 0.4, 0, DOOR.z).applyMatrix4(plane.matrixWorld);
+    const dd = Math.hypot(foot.x - v1.x, foot.z - v1.z);
+    if (!pl.crashed) label(v1.x, v1.y + 0.4, v1.z, '#8fd0ff', dd < 7 ? 'CREW DOOR · press F to climb in' : `CREW DOOR ${Math.round(o)}m`);
+    help = 'ON THE FIELD: W/A/S/D walk · SHIFT run · MOUSE or arrows look · F climb in (at the crew door)';
+  } else if (walk) {
+    // name the stations nearby so you can find your way around
+    SEATS.forEach((s, i) => { const d = Math.hypot(walk.x - s.st[0], walk.z - s.st[1]); if (d < 6 && d > 1.1) { v1.set(s.st[0], eyeY(s.st[1]) + 0.25, s.st[1]).applyMatrix4(plane.matrixWorld); label(v1.x, v1.y, v1.z, '#c9c3a4', s.name); } });
+    const i = nearSeat(), inBay = walk.z > BAY.z0 && walk.z < BAY.z1, atDoor = Math.abs(walk.z - DOOR.z) < 1.2;
+    let t = '';
+    if (inBay) t = pl.doors ? (pl.ground ? 'BOMB BAY: doors open. Step off the catwalk (A/D) to drop to the ground' : 'BOMB BAY: doors open. Step off the catwalk (A/D) to BAIL OUT') : 'BOMB BAY: doors closed. Press O to open them';
+    else if (i >= 0) t = S.st[i][0] ? `${SEATS[i].name}: ${S.st[i][1]} is on it` : `Press E to take the ${SEATS[i].name.toUpperCase()}${S.st[i][7] ? '' : ' (the bot steps aside)'}`;
+    else if (atDoor) t = pl.ground && pl.spd < 1 ? 'CREW DOOR: press F to climb out' : 'CREW DOOR: stays shut until we are parked';
+    if (t) strip(t, cy + 60, AMBER, 13);
+    help = 'WALKING: W/A/S/D move · SHIFT hurry · MOUSE or arrows look · E take a station · O bay doors · C crew orders';
+  } else if (mySeat >= 0) help = `${SEATS[mySeat].name.toUpperCase()}: ${HELP[SEATS[mySeat].key] || GUNHELP} · F get up and walk · C crew orders${mySeat ? ' · R mark fighter' : ''}`;
+  if (help && !small) strip(help, H - 14);
   if (hitFlash > 0) { hitFlash -= dt; ctx.fillStyle = `rgba(255,40,20,${hitFlash * 0.5})`; ctx.fillRect(0, 0, W, H); }
 }
 

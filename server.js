@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { Room } from './sim.js';
+import { Room, MAX_PLAYERS } from './sim.js';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const PORT = +process.env.PORT || 3000;
@@ -37,15 +37,15 @@ wss.on('connection', ws => {
       if (!code) do { code = Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random() * 24)]).join(''); } while (rooms.has(code));
       room = rooms.get(code);
       if (!room) rooms.set(code, room = new Room(code));
-      if (room.players.size >= 5) { ws.send(JSON.stringify({ t: 'err', s: 'That crew is full (5 players).' })); room = null; return; }
+      if (room.players.size >= MAX_PLAYERS) { ws.send(JSON.stringify({ t: 'err', s: `That crew is full (${MAX_PLAYERS} players).` })); room = null; return; }
       const name = String(m.name || '').replace(/[^\w .\-']/g, '').trim().slice(0, 16) || 'Rookie';
       player = { id: nextPid++, name, missions: Math.max(0, Math.min(999, m.missions | 0)), ws };
       room.addPlayer(player);
       ws.send(JSON.stringify({ t: 'welcome', id: player.id, room: code }));
     } else if (player) {
-      if (m.t === 'in') Object.assign(player.in, { p: m.p, r: m.r, y: m.y, th: m.th, br: m.br, ay: m.ay, ap: m.ap, f: m.f, d: m.d, fx: m.fx, fz: m.fz, fy: m.fy, use: m.use });
+      if (m.t === 'in') Object.assign(player.in, { p: m.p, r: m.r, y: m.y, th: m.th, br: m.br, ay: m.ay, ap: m.ap, f: m.f, d: m.d, fx: m.fx, fz: m.fz, fy: m.fy, lx: m.lx, lz: m.lz, ly: m.ly });
       else if (m.t === 'seat') room.setSeat(player, m.i | 0);
-      else if (m.t === 'act') room.action(player, String(m.a));
+      else if (m.t === 'act') room.action(player, String(m.a), m);
     }
   });
   ws.on('close', () => {

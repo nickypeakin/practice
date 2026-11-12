@@ -1,6 +1,6 @@
 # Fortress Crew
 
-Co-op B-17 bomber game for up to 5 players in the browser. Empty seats are flown by bots.
+Co-op B-17 bomber game for up to 7 players in the browser. Every station nobody holds is manned by a bot, and you give the bots their orders.
 
 ## Run
 
@@ -14,23 +14,40 @@ so friends on the same server join your bomber. Set `PORT` to change the port.
 
 ## Mission
 
-1. The plane starts nearly empty. Press **F** to climb out, walk (W/A/S/D, mouse to look) into the rings beside the plane and hold **E** at the fuel truck, the ammo crates and the bomb cart. Press **F** next to the plane to climb back aboard. Bots will not take off while a player is on foot.
-2. Take off, fly to the TARGET marker (about 1 km west of the field, so fly out a few km and turn back for a straight bomb run), fight off the fighters, bomb the target.
-3. Fly back to BASE, land with the gear down and brake to a stop.
+1. You start in the air, in formation with six other B-17s, about 10 km from the target. The YOUR SLOT marker shows where your ship belongs; the other bombers' guns cover you while you stay close.
+2. Fighters come in waves and go for the whole formation. Fight them off, bomb the target, then follow the formation home.
+3. Break off near BASE, land with the gear down and brake to a stop.
 4. Everyone still aboard after a successful mission is promoted one rank (saved in your browser).
-5. If the ship is going down, press **J** twice to bail out. You survive but get no promotion.
+5. After landing you get time to walk around: the crew door is aft on the right side (**F** to climb out, **F** at the door to climb back in). **N** starts the next mission.
 
-## Seats (keys 1-5, any seat not held by another player)
+## Moving around the ship
+
+- **F** gets you up from your station at any time, in flight too. Walk with W/A/S/D, look with the mouse. If the pilot gets up, the copilot (bot) flies.
+- **E** next to a station takes it (the bot steps aside). Keys **1-7** still jump straight to a station from another one.
+- Stations nose to tail: bombardier, flight deck, top turret, bomb bay, radio room, ball turret, waist guns, crew door, tail gun.
+- **Bailing out**: open the bomb bay doors (**O**), walk onto the catwalk and step off it sideways. In the air you go out on a parachute (you survive but get no promotion); parked, you drop onto the field.
+
+## Crew orders (C opens the menu, then a number)
+
+| Key | Order |
+|---|---|
+| 0 | Bay doors open / close |
+| 1 / 2 / 3 | Gunners: fire at will / close range only (saves ammo) / hold fire |
+| 4 | Gunners: focus the fighter you are looking at (**R** does the same without the menu) |
+| 5 / 6 / 7 | Bombardier: bomb the target himself / hold the bombs / salvo now |
+| 8 / 9 | Copilot: hold formation / take us home and land |
+
+## Stations
 
 | Seat | Controls |
 |---|---|
-| 1 Pilot | W/S pitch, A/D roll, Q/E rudder, Shift/Z throttle, G gear, B brake, V outside view (first person by default) |
+| 1 Pilot | W/S pitch, A/D roll, Q/E rudder, Shift/Z throttle, G gear, B brake, V outside view |
 | 2 Bombardier | mouse + click nose gun, B bombsight, O bay doors, Space drop bombs |
-| 3 Top turret, 4 Ball turret, 5 Tail gunner | mouse (or arrows) aim, click / Space fire |
+| 3 Top turret, 4 Ball turret, 5 Left waist, 6 Right waist, 7 Tail gunner | mouse (or arrows) aim, click / Space fire |
 
 The white circle in front of a fighter is the lead marker: shoot at it, not at the plane.
 
 ## Files
 
-- `server.js` web + WebSocket server, `sim.js` the game simulation (flight, bots, fighters, damage)
+- `server.js` web + WebSocket server, `sim.js` the game simulation (flight, formation, bots, fighters, damage)
 - `public/` browser client (three.js), `public/shared.js` constants shared by both sides
