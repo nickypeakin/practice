@@ -1,5 +1,5 @@
 // Authoritative game simulation for one bomber crew ("room").
-import { SEATS, AMMO_MAX, BOMBS_MAX, BULLET_SPD, G, rot, irot, wrap, clamp, aimDir, clampAim, planeVel, impactPoint } from './public/shared.js';
+import { STN, STN_R, SEATS, AMMO_MAX, BOMBS_MAX, BULLET_SPD, G, rot, irot, wrap, clamp, aimDir, clampAim, planeVel, impactPoint } from './public/shared.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 2;
@@ -33,18 +33,18 @@ export class Room {
 
   newMission() {
     this.mid++;
-    const ang = Math.random() * Math.PI * 2, d = rnd(11000, 15000);
-    this.tgt = { x: Math.sin(ang) * d, z: Math.cos(ang) * d, hp: 100 };
+    const ang = -rnd(0.6, 2.5), d = rnd(1000, 1200);   // west of the field, clear of the runway and hangars
+    this.tgt = { x: Math.sin(ang) * d, z: 500 + Math.cos(ang) * d, hp: 100 };   // measured from where the bomber is parked
     this.pl = { x: 0, y: 3, z: 500, yaw: 0, pitch: 0, roll: 0, spd: 0, vy: 0, thr: 0, gear: true, doors: false, ground: true,
       fuel: 15, leak: 0, hull: 100, eng: [100, 100, 100, 100], bombs: 0, doomed: false, crashed: false };
     this.seats = SEATS.map(d => ({ pid: null, ammo: 0, ay: d.gun ? d.gun.yc : 0, ap: 0, fire: false, cool: 0, out: false, kills: 0, bailT: null }));
     this.phase = 'ground'; this.svc = false; this.bombT = 0; this.dropCool = 0; this.botDropping = false;
     this.fighters = []; this.bullets = []; this.bombsAir = []; this.chutes = []; this.ev = [];
-    this.waveT = 15; this.result = null; this.endT = 0; this.crashT = 0; this.noCrewT = 0; this.kills = 0;
+    this.waveT = 12; this.result = null; this.endT = 0; this.crashT = 0; this.noCrewT = 0; this.kills = 0;
     this.bot = { wait: 0, app: 'iaf', egress: false, egressYaw: 0, said: {} };
-    for (const p of this.players.values()) { p.bailed = false; const s = p.seat; p.seat = -1; if (s >= 0 && !this.seats[s].pid) { this.seats[s].pid = p.id; p.seat = s; } }
+    for (const p of this.players.values()) { p.bailed = false; p.foot = null; const s = p.seat; p.seat = -1; if (s >= 0 && !this.seats[s].pid) { this.seats[s].pid = p.id; p.seat = s; } }
     for (const p of this.players.values()) if (p.seat < 0) this.autoSeat(p);
-    this.msg(`Mission ${this.mid}: target is ${(d / 1000).toFixed(0)} km out. Fuel up, arm up, and get airborne.`);
+    this.msg(`Mission ${this.mid}: target is ${(d / 1000).toFixed(1)} km out. Climb out (F) and load fuel, ammo and bombs.`);
   }
 
   msg(s) { this.ev.push({ k: 'msg', s }); }
@@ -55,7 +55,7 @@ export class Room {
     p.seat = i; if (i >= 0) this.seats[i].pid = p.id;
   }
   addPlayer(p) {
-    p.in = { p: 0, r: 0, y: 0, th: 0, br: 0, ay: 0, ap: 0, f: 0, d: 0 }; p.bailed = false; p.seat = -1;
+    p.in = { p: 0, r: 0, y: 0, th: 0, br: 0, ay: 0, ap: 0, f: 0, d: 0 }; p.bailed = false; p.foot = null; p.seat = -1;
     this.players.set(p.id, p); this.autoSeat(p);
     this.msg(`${p.name} joined the crew.`);
   }
@@ -65,7 +65,7 @@ export class Room {
   }
   setSeat(p, i) {
     const s = this.seats[i];
-    if (!s || p.bailed || s.pid || s.out || this.phase === 'ended') return;
+    if (!s || p.bailed || p.foot || s.pid || s.out || this.phase === 'ended') return;
     if (p.seat >= 0) this.seats[p.seat].pid = null;
     s.pid = p.id; p.seat = i; p.in.f = 0; p.in.d = 0;
     if (SEATS[i].gun) { p.in.ay = s.ay; p.in.ap = s.ap; }
@@ -74,12 +74,31 @@ export class Room {
 
   action(p, a) {
     const pl = this.pl;
-    if (p.seat < 0 || this.phase === 'ended' || pl.crashed) return;
+    if (this.phase === 'ended' || pl.crashed) return;
+    if (a === 'board') {
+      if (p.foot && pl.ground && pl.spd < 3 && Math.hypot(p.foot.x - pl.x, p.foot.z - pl.z) < 25) {
+        p.foot = null;
+        const s = this.seats[p.lastSeat];
+        if (s && !s.pid && !s.out) { s.pid = p.id; p.seat = p.lastSeat; } else this.autoSeat(p);
+        if (p.seat >= 0 && SEATS[p.seat].gun) { p.in.ay = this.seats[p.seat].ay; p.in.ap = this.seats[p.seat].ap; }
+        this.msg(`${p.name} climbed aboard.`);
+      }
+      return;
+    }
+    if (p.seat < 0) return;
+    if (a === 'exit') {
+      if (pl.ground && pl.spd < 0.5 && this.phase === 'ground') {
+        this.seats[p.seat].pid = null; p.lastSeat = p.seat; p.seat = -1;
+        const o = rot([5, 0, 6], pl.yaw, 0, 0);
+        p.foot = { x: pl.x + o[0], z: pl.z + o[2], yaw: pl.yaw };
+        p.in.fx = p.in.fz = undefined; p.in.use = 0;
+        this.msg(`${p.name} climbed out onto the runway.`);
+      }
+      return;
+    }
     if (a === 'gear' && p.seat === 0 && !pl.ground) pl.gear = !pl.gear;
     else if (a === 'doors' && p.seat === 1) { pl.doors = !pl.doors; this.msg(`Bomb bay doors ${pl.doors ? 'open' : 'closed'}.`); }
-    else if (a === 'svc') {
-      if (pl.ground && pl.spd < 0.5 && this.atBase()) { this.svc = !this.svc; if (this.svc) this.msg('Ground crew: fueling and arming the aircraft…'); }
-    } else if (a === 'bail' && !pl.ground && pl.y > 30) this.bail(p.seat);
+    else if (a === 'bail' && !pl.ground && pl.y > 30) this.bail(p.seat);
   }
 
   bail(i) {
@@ -104,7 +123,7 @@ export class Room {
       else if (!ps.out) c = this.botPilot(dt);
     } else c.br = 1;
 
-    this.service(dt);
+    this.footService(dt);
     this.physics(dt, c);
     if (this.phase === 'ground' && !pl.ground && pl.y > 8) { this.phase = 'flight'; this.msg('Airborne! Gear up (G) and head for the target.'); }
     this.guns(dt);
@@ -123,7 +142,7 @@ export class Room {
 
     // end conditions
     if (this.phase !== 'ended') {
-      let aboard = 0; for (const p of this.players.values()) if (!p.bailed) aboard++;
+      let aboard = 0; for (const p of this.players.values()) if (!p.bailed && !p.foot) aboard++;
       if (pl.crashed) { if ((this.crashT += dt) > 3) this.end('lost'); }
       else if (this.phase === 'flight' && pl.ground && pl.spd < 0.5) this.end(this.atBase() ? (this.tgt.hp <= 0 ? 'success' : 'aborted') : 'ditched');
       else if (this.phase === 'flight' && aboard === 0 && this.players.size) { if ((this.noCrewT += dt) > 6) this.end('lost'); }
@@ -134,7 +153,7 @@ export class Room {
     this.phase = 'ended'; this.endT = 14; this.svc = false;
     const res = { outcome, tgt: this.tgt.hp <= 0, kills: this.kills, players: [] };
     for (const p of this.players.values()) {
-      const status = p.bailed ? 'bailed' : outcome === 'success' ? 'credit' : outcome === 'lost' ? 'kia' : 'none';
+      const status = p.bailed ? 'bailed' : p.foot ? 'ground' : outcome === 'success' ? 'credit' : outcome === 'lost' ? 'kia' : 'none';
       if (status === 'credit') p.missions++;
       res.players.push({ id: p.id, name: p.name, status, missions: p.missions });
     }
@@ -142,15 +161,30 @@ export class Room {
     this.result = res;
   }
 
-  service(dt) {
-    const pl = this.pl; if (!this.svc) return;
-    if (!pl.ground || pl.spd > 0.5) { this.svc = false; return; }
-    pl.fuel = Math.min(100, pl.fuel + 9 * dt); pl.hull = Math.min(100, pl.hull + 6 * dt); pl.leak = 0;
-    pl.eng = pl.eng.map(e => Math.min(100, e + 12 * dt));
-    let full = pl.fuel >= 100 && pl.hull >= 100;
-    this.seats.forEach((s, i) => { if (SEATS[i].gun) { s.ammo = Math.min(AMMO_MAX, s.ammo + 45 * dt); if (s.ammo < AMMO_MAX) full = false; } });
-    if (pl.bombs < BOMBS_MAX) { full = false; if ((this.bombT += dt) > 1.2) { pl.bombs++; this.bombT = 0; } }
-    if (full) { this.svc = false; this.msg('Ground crew: fully fueled and armed. Good hunting!'); }
+  // Crew on foot: walk around the field and hold E at a loading point.
+  footService(dt) {
+    const pl = this.pl; this.svc = false;
+    const parked = pl.ground && pl.spd < 0.5 && this.phase === 'ground' && Math.hypot(pl.x, pl.z - 500) < 200;
+    for (const p of this.players.values()) {
+      const f = p.foot; if (!f) continue;
+      const nx = +p.in.fx, nz = +p.in.fz, ny = +p.in.fy;
+      if (Number.isFinite(nx) && Number.isFinite(nz)) {
+        const dx = nx - f.x, dz = nz - f.z, l = Math.hypot(dx, dz), max = 14 * dt + 0.5, k = l > max ? max / l : 1;
+        f.x = clamp(f.x + dx * k, -400, 400); f.z = clamp(f.z + dz * k, 100, 900);
+      }
+      if (Number.isFinite(ny)) f.yaw = wrap(ny);
+      if (!p.in.use || !parked) continue;
+      const near = k => Math.hypot(f.x - STN[k][0], f.z - STN[k][1]) < STN_R;
+      if (near('fuel')) { if (pl.fuel < 100) { this.svc = true; pl.fuel = Math.min(100, pl.fuel + 9 * dt); if (pl.fuel >= 100) this.msg('Fuel tanks are full.'); } }
+      else if (near('ammo')) {
+        let any = false, full = true;
+        this.seats.forEach((s, i) => { if (!SEATS[i].gun) return; if (s.ammo < AMMO_MAX) { any = true; s.ammo = Math.min(AMMO_MAX, s.ammo + 45 * dt); } if (s.ammo < AMMO_MAX) full = false; });
+        if (any) { this.svc = true; if (full) this.msg('All guns are loaded.'); }
+      } else if (near('bombs') && pl.bombs < BOMBS_MAX) {
+        this.svc = true;
+        if ((this.bombT += dt) > 1) { pl.bombs++; this.bombT = 0; if (pl.bombs >= BOMBS_MAX) this.msg('Bomb bay is full.'); }
+      }
+    }
   }
   serviced() {
     return this.pl.fuel >= 99.5 && this.pl.bombs >= BOMBS_MAX && this.seats.every((s, i) => !SEATS[i].gun || s.ammo >= AMMO_MAX - 1);
@@ -162,7 +196,7 @@ export class Room {
     const nEng = pl.eng.filter(e => e > 0).length;
     if (pl.doomed) pl.thr = 0; else pl.thr = clamp(pl.thr + c.th * 0.6 * dt, 0, 1);
     const power = (pl.fuel > 0 ? pl.thr : 0) * nEng / 4;
-    if (pl.fuel > 0) {
+    if (pl.fuel > 0 && !(pl.ground && pl.thr < 0.02)) {
       pl.fuel = Math.max(0, pl.fuel - ((0.02 + 0.16 * pl.thr) * nEng / 4 + pl.leak) * dt);
       if (pl.fuel === 0) this.msg('OUT OF FUEL! Engines are dead.');
       else if (pl.fuel < 15 && this.phase === 'flight') this.once('lowfuel', 'Warning: fuel below 15%.');
@@ -217,9 +251,10 @@ export class Room {
       const hdgDes = clamp(pl.x * 0.01, -0.3, 0.3);
       c.y = clamp(wrap(hdgDes - pl.yaw) * 2, -1, 1);
       if (this.phase === 'ground') {
-        if (!b.go && !this.serviced()) {
+        let afoot = false; for (const p of this.players.values()) if (p.foot) afoot = true;
+        if (!b.go && (!this.serviced() || afoot)) {
           thrDes = 0; c.br = 1; b.wait = 0;
-          if (!this.svc && pl.spd < 0.5 && this.atBase()) { this.svc = true; this.msg('Pilot: ground crew, fill her up.'); }
+          if (!this.serviced()) this.once('need', 'Pilot: she\'s empty. Someone climb out (F) and load fuel, ammo and bombs.');
         } else if ((b.wait += dt) > 4) {
           b.go = true; this.once('roll', 'Pilot: rolling for takeoff!');
           thrDes = 1; if (pl.spd > 50) c.p = 1;
@@ -236,12 +271,16 @@ export class Room {
         pitchDes = 0.13; thrDes = 1; yawDes = pl.yaw;
       } else if (outbound) {
         const dx = this.tgt.x - pl.x, dz = this.tgt.z - pl.z, d = Math.hypot(dx, dz);
-        if (b.egress) { yawDes = b.egressYaw; if (d > 5500) b.egress = false; }
-        else { yawDes = Math.atan2(-dx, -dz); if (d < 500) { b.egress = true; b.egressYaw = pl.yaw; } }
-        altDes = 1500; thrDes = 0.9; b.app = 'iaf';
+        if (b.egress) { yawDes = b.egressYaw; if (d > 4000) b.egress = false; }
+        else {
+          yawDes = Math.atan2(-dx, -dz);
+          // too close to turn onto the target: extend away first, then come back for a straight run
+          if (d < 500 || (d < 2500 && Math.abs(wrap(yawDes - pl.yaw)) > 0.9)) { b.egress = true; b.egressYaw = pl.yaw; yawDes = pl.yaw; }
+        }
+        altDes = 700; thrDes = 0.9; b.app = 'iaf';
       } else if (b.app !== 'final') {
         const dx = -pl.x, dz = IAF_Z - pl.z, d = Math.hypot(dx, dz);
-        yawDes = Math.atan2(-dx, -dz); altDes = d > 10000 ? 1500 : 400; thrDes = pl.y > altDes + 100 ? 0.55 : 0.8;
+        yawDes = Math.atan2(-dx, -dz); altDes = 400; thrDes = pl.y > altDes + 100 ? 0.55 : 0.8;
         if (d < 700 || (pl.z > 3000 && pl.z < 7000 && Math.abs(pl.x) < 500 && Math.abs(pl.yaw) < 0.5)) { b.app = 'final'; this.once('final', 'Pilot: on final approach. Gear down.'); }
       } else {
         yawDes = clamp(pl.x * 0.0015, -0.8, 0.8);
@@ -374,7 +413,7 @@ export class Room {
   updFighters(dt) {
     const pl = this.pl, pv = planeVel(pl), lvl = this.level();
     const homebound = pl.bombs === 0 || this.tgt.hp <= 0;
-    const away = Math.hypot(pl.x, pl.z) > (homebound ? 6500 : 3000) && !pl.ground && !pl.crashed && this.phase === 'flight';
+    const away = pl.y > (homebound ? 260 : 150) && !pl.ground && !pl.crashed && this.phase === 'flight';
     if (away) {
       this.waveT -= dt;
       const alive = this.fighters.filter(f => !f.dead).length;
@@ -426,6 +465,7 @@ export class Room {
       pl: { x: r2(pl.x), y: r2(pl.y), z: r2(pl.z), yaw: r3(pl.yaw), pitch: r3(pl.pitch), roll: r3(pl.roll), spd: r2(pl.spd), vy: r2(pl.vy), thr: r2(pl.thr),
         gear: pl.gear ? 1 : 0, doors: pl.doors ? 1 : 0, ground: pl.ground ? 1 : 0, fuel: r2(pl.fuel), leak: pl.leak > 0.005 ? 1 : 0, hull: Math.round(pl.hull),
         bombs: pl.bombs, doomed: pl.doomed ? 1 : 0, crashed: pl.crashed ? 1 : 0, eng: pl.eng.map(e => Math.round(e)) },
+      ft: [...this.players.values()].filter(p => p.foot).map(p => [p.id, r2(p.foot.x), r2(p.foot.z), r3(p.foot.yaw), p.name]),
       st: this.seats.map(s => { const p = s.pid && this.players.get(s.pid); return [s.pid || 0, p ? p.name : '', p ? p.missions : 0, Math.floor(s.ammo), r3(s.ay), r3(s.ap), s.fire ? 1 : 0, s.out ? 1 : 0, s.kills]; }),
       f: this.fighters.map(f => [f.id, r2(f.p[0]), r2(f.p[1]), r2(f.p[2]), r2(f.dir[0] * f.spd), r2(f.dir[1] * f.spd), r2(f.dir[2] * f.spd), (f.firing ? 1 : 0) | (f.dead ? 2 : 0)]),
       b: this.bombsAir.map(b => [b.id, r2(b.x), r2(b.y), r2(b.z)]),

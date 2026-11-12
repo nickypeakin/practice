@@ -14,8 +14,8 @@ so friends on the same server join your bomber. Set `PORT` to change the port.
 
 ## Mission
 
-1. On the ground press **R**: the ground crew loads fuel, ammunition and bombs. You start nearly empty.
-2. Take off, fly to the TARGET marker, fight off the fighters, bomb the target.
+1. The plane starts nearly empty. Press **F** to climb out, walk (W/A/S/D, mouse to look) into the rings beside the plane and hold **E** at the fuel truck, the ammo crates and the bomb cart. Press **F** next to the plane to climb back aboard. Bots will not take off while a player is on foot.
+2. Take off, fly to the TARGET marker (about 1 km west of the field, so fly out a few km and turn back for a straight bomb run), fight off the fighters, bomb the target.
 3. Fly back to BASE, land with the gear down and brake to a stop.
 4. Everyone still aboard after a successful mission is promoted one rank (saved in your browser).
 5. If the ship is going down, press **J** twice to bail out. You survive but get no promotion.
@@ -24,7 +24,7 @@ so friends on the same server join your bomber. Set `PORT` to change the port.
 
 | Seat | Controls |
 |---|---|
-| 1 Pilot | W/S pitch, A/D roll, Q/E rudder, Shift/Z throttle, G gear, B brake, V cockpit view |
+| 1 Pilot | W/S pitch, A/D roll, Q/E rudder, Shift/Z throttle, G gear, B brake, V outside view (first person by default) |
 | 2 Bombardier | mouse + click nose gun, B bombsight, O bay doors, Space drop bombs |
 | 3 Top turret, 4 Ball turret, 5 Tail gunner | mouse (or arrows) aim, click / Space fire |
 

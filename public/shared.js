@@ -3,6 +3,10 @@
 
 export const AMMO_MAX = 500, BOMBS_MAX = 8, BULLET_SPD = 820, G = 9.81;
 
+// Loading points beside the parked bomber: [x, z]
+export const STN = { fuel: [30, 500], ammo: [30, 518], bombs: [30, 482] };
+export const STN_R = 7;
+
 export const SEATS = [
   { key: 'pilot', name: 'Pilot' },
   { key: 'bomb', name: 'Bombardier', gun: { pos: [0, -0.7, -10.9], yc: 0, yr: 1.2, pmin: -0.7, pmax: 0.5 } },

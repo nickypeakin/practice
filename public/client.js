@@ -1,5 +1,5 @@
 import * as THREE from '/three/three.module.js';
-import { SEATS, RANKS, rankName, rankAbbr, AMMO_MAX, BOMBS_MAX, BULLET_SPD, wrap, clamp, clampAim, aimDir, planeVel, impactPoint } from '/shared.js';
+import { STN, STN_R, SEATS, RANKS, rankName, rankAbbr, AMMO_MAX, BOMBS_MAX, BULLET_SPD, wrap, clamp, clampAim, aimDir, planeVel, impactPoint } from '/shared.js';
 
 const $ = id => document.getElementById(id);
 const store = { get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch { } } };
@@ -51,6 +51,21 @@ const cylZ = (r1, r2, len, mat, x = 0, y = 0, z = 0, seg = 14) => { const m = ne
   const hm = lam(0x6b6f5c), rm = lam(0x4b5140);
   for (let i = 0; i < 3; i++) { base.add(box(60, 18, 50, hm, 220, 9, 560 - i * 90)); base.add(box(64, 3, 54, rm, 220, 19.5, 560 - i * 90)); }
   base.add(box(10, 26, 10, lam(0x8b8a78), 110, 13, 610)); base.add(box(15, 5, 15, lam(0x2f3a3f), 110, 28, 610));
+}
+// loading points beside the parked bomber
+{
+  const g = new THREE.Group(); scene.add(g);
+  const od = lam(0x4f5a34), dk = lam(0x2a2c2a), wood = lam(0x8a6e45), red = lam(0xa33a2a);
+  const ring = (x, z, c) => { const m = new THREE.Mesh(new THREE.RingGeometry(STN_R - 0.5, STN_R, 32), new THREE.MeshBasicMaterial({ color: c })); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.65, z); g.add(m); };
+  let [x, z] = STN.fuel; ring(x, z, 0xffb347);                                    // fuel truck
+  g.add(box(2.4, 2.2, 2.2, od, x + 4.5, 1.6, z - 2.6)); g.add(box(2.4, 0.5, 6.5, dk, x + 4.5, 0.9, z + 0.5));
+  { const t = cylZ(1.15, 1.15, 4.6, red, x + 4.5, 2.2, z + 1.2); g.add(t); }
+  for (const dz of [-2.4, 2.6]) for (const dx of [-1.2, 1.2]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.4, 10), dk); w.rotation.z = Math.PI / 2; w.position.set(x + 4.5 + dx, 0.5, z + dz); g.add(w); }
+  [x, z] = STN.ammo; ring(x, z, 0xf0d77a);                                        // ammo crates
+  g.add(box(1.6, 0.8, 1, wood, x + 4, 0.8, z)); g.add(box(1.6, 0.8, 1, wood, x + 4, 0.8, z + 1.2)); g.add(box(1.6, 0.8, 1, wood, x + 4, 1.6, z + 0.6)); g.add(box(1.2, 0.6, 0.8, od, x + 4, 0.7, z - 1.3));
+  [x, z] = STN.bombs; ring(x, z, 0xff7a5a);                                       // bomb cart
+  g.add(box(2, 0.3, 4.4, dk, x + 4.2, 0.9, z));
+  for (const dx of [-0.6, 0.1, 0.8]) g.add(cylZ(0.3, 0.3, 1.8, od, x + 4.2 + dx, 1.35, z + (dx > 0 ? 0.8 : -0.6), 8));
 }
 // clouds
 {
@@ -120,6 +135,12 @@ function makeFighter() {
   g.scale.setScalar(1.3);
   return g;
 }
+function makeSoldier() {
+  const g = new THREE.Group();
+  g.add(box(0.55, 0.8, 0.3, lam(0x6b5a3a), 0, 1.15, 0)); g.add(box(0.5, 0.75, 0.28, lam(0x4d4a36), 0, 0.38, 0));
+  const h = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), lam(0xd9b08c)); h.position.y = 1.75; g.add(h);
+  return g;
+}
 function makeBomb() { const m = cylZ(0.35, 0.35, 1.8, lam(0x2c2f2a), 0, 0, 0, 8); m.scale.setScalar(1.6); return m; }
 function makeChute() {
   const g = new THREE.Group();
@@ -180,7 +201,8 @@ const boomSound = size => noise(1.2, 300, clamp(size / 60, 0.1, 0.5));
 
 // ------------------------------------------------------------------ network + state
 let ws = null, myId = 0, roomCode = '', snaps = [], latest = null;
-let mySeat = -1, lastSeat = -2, bailed = false, aim = { ay: 0, ap: 0 }, bombsight = false, cockpit = false;
+let mySeat = -1, lastSeat = -2, bailed = false, aim = { ay: 0, ap: 0 }, bombsight = false, cockpit = true;
+let foot = null;   // {x, z, yaw, pitch} while walking on the airfield
 let missions = +store.get('b17.missions', 0) || 0, creditedMid = 0, promoted = false;
 const msgs = []; let hitFlash = 0, shake = 0, bailArm = 0;
 const keys = {}; let mouseFire = false;
@@ -238,7 +260,7 @@ function showResult(res) {
     const row = document.createElement('div'); row.className = 'row';
     const a = document.createElement('span'); a.textContent = p.name + (p.id === myId ? ' (you)' : '');
     const b = document.createElement('span');
-    b.textContent = { credit: `Promoted to ${rankName(p.missions)}`, kia: 'Killed in action', bailed: 'Bailed out — survived', none: `Remains ${rankName(p.missions)}` }[p.status];
+    b.textContent = { ground: 'Left behind on the airfield', credit: `Promoted to ${rankName(p.missions)}`, kia: 'Killed in action', bailed: 'Bailed out — survived', none: `Remains ${rankName(p.missions)}` }[p.status];
     b.className = p.status === 'credit' ? 'good' : p.status === 'kia' ? 'bad' : '';
     row.append(a, b); $('resRows').append(row);
   }
@@ -268,7 +290,7 @@ addEventListener('keydown', e => {
   const k = e.key.toLowerCase(); if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'tab'].includes(k)) e.preventDefault();
   if (keys[k]) return; keys[k] = true;
   if (k >= '1' && k <= '5') send({ t: 'seat', i: +k - 1 });
-  else if (k === 'r') send({ t: 'act', a: 'svc' });
+  else if (k === 'f') send({ t: 'act', a: foot ? 'board' : 'exit' });
   else if (k === 'g') send({ t: 'act', a: 'gear' });
   else if (k === 'o') send({ t: 'act', a: 'doors' });
   else if (k === 'v') cockpit = !cockpit;
@@ -281,12 +303,16 @@ hud.style.pointerEvents = 'none';
 $('gl').addEventListener('mousedown', () => { if (!myId) return; if (document.pointerLockElement !== $('gl')) $('gl').requestPointerLock?.(); mouseFire = true; });
 addEventListener('mouseup', () => { mouseFire = false; });
 addEventListener('mousemove', e => {
-  if (document.pointerLockElement !== $('gl') || mySeat < 1) return;
+  if (document.pointerLockElement !== $('gl')) return;
+  if (foot) { foot.yaw -= e.movementX * 0.0025; foot.pitch = clamp(foot.pitch - e.movementY * 0.0025, -1.3, 1.3); return; }
+  if (mySeat < 1) return;
   const s = bombsight ? 0 : 0.0022; aim.ay -= e.movementX * s; aim.ap -= e.movementY * s;
 });
 const K = (...ks) => ks.some(k => keys[k]) ? 1 : 0;
 setInterval(() => {
-  if (!myId || mySeat < 0) return;
+  if (!myId) return;
+  if (foot) { send({ t: 'in', fx: foot.x, fz: foot.z, fy: foot.yaw, use: K('e') }); return; }
+  if (mySeat < 0) return;
   const m = { t: 'in', p: 0, r: 0, y: 0, th: 0, br: 0, ay: aim.ay, ap: aim.ap, f: 0, d: 0 };
   if (mySeat === 0) { m.p = K('s', 'arrowdown') - K('w', 'arrowup'); m.r = K('a', 'arrowleft') - K('d', 'arrowright'); m.y = K('q') - K('e'); m.th = K('shift', '=', '+') - K('z', '-'); m.br = K('b'); }
   else if (mySeat === 1) { m.f = mouseFire && !bombsight ? 1 : 0; m.d = K(' '); }
@@ -295,7 +321,7 @@ setInterval(() => {
 }, 50);
 
 // ------------------------------------------------------------------ world update
-const objs = { f: new Map(), b: new Map(), c: new Map() };
+const objs = { f: new Map(), b: new Map(), c: new Map(), p: new Map() };
 function sync(map, list, make, upd) {
   const seen = new Set();
   for (const e of list) { seen.add(e[0]); let o = map.get(e[0]); if (!o) { o = make(); scene.add(o); map.set(e[0], o); } o.position.set(e[1], e[2], e[3]); upd && upd(o, e); }
@@ -317,6 +343,15 @@ function updateWorld(S, dt) {
   props.forEach((p, i) => { const on = pl.eng[i] > 0 && pl.fuel > 0; p.visible = on; p.userData.blade.visible = !on; });
   // my seat
   mySeat = S.st.findIndex(s => s[0] === myId); bailed = mySeat < 0 && S.c.some(c => c[4] === myId);
+  const mf = S.ft.find(f => f[0] === myId);
+  if (mf && !foot) foot = { x: mf[1], z: mf[2], yaw: mf[3], pitch: 0 }; else if (!mf) foot = null;
+  if (foot) {
+    const lr = 1.6 * dt; foot.yaw += (K('arrowleft') - K('arrowright')) * lr; foot.pitch = clamp(foot.pitch + (K('arrowup') - K('arrowdown')) * lr, -1.3, 1.3);
+    const fw = K('w') - K('s'), st = K('d') - K('a'), sp = (K('shift') ? 10 : 6) * dt / (fw && st ? 1.414 : 1);
+    foot.x = clamp(foot.x + (-Math.sin(foot.yaw) * fw + Math.cos(foot.yaw) * st) * sp, -400, 400);
+    foot.z = clamp(foot.z + (-Math.cos(foot.yaw) * fw - Math.sin(foot.yaw) * st) * sp, 100, 900);
+  }
+  sync(objs.p, S.ft.filter(f => f[0] !== myId).map(f => [f[0], f[1], 0.4, f[2], f[3]]), makeSoldier, (o, e) => { o.rotation.y = e[4]; });
   if (mySeat !== lastSeat) { lastSeat = mySeat; bombsight = false; if (mySeat > 0) { aim.ay = S.st[mySeat][4]; aim.ap = S.st[mySeat][5]; } }
   if (mySeat > 0) {
     const ar = 1.4 * dt; aim.ay += (K('arrowleft') - K('arrowright')) * ar; aim.ap += (K('arrowup') - K('arrowdown')) * ar;
@@ -360,7 +395,9 @@ function setFov(f) { if (camera.fov !== f) { camera.fov = f; camera.updateProjec
 function updateCamera(S, dt) {
   const pl = S.pl; camera.up.set(0, 1, 0); impact = null;
   const myChute = S.c.find(c => c[4] === myId);
-  if (myChute && S.ph !== 'ended') {
+  if (foot) {
+    setFov(70); camera.position.set(foot.x, 2.1, foot.z); camera.rotation.set(foot.pitch, foot.yaw, 0, 'YXZ');
+  } else if (myChute && S.ph !== 'ended') {
     setFov(65); camera.position.set(myChute[1] + 6, myChute[2] + 3, myChute[3] + 12); camera.lookAt(pl.x, pl.y, pl.z);
   } else if (mySeat > 0 && bombsight) {
     impact = impactPoint(pl); setFov(22);
@@ -371,7 +408,7 @@ function updateCamera(S, dt) {
     camera.position.copy(v1).add(v2);
     camera.quaternion.copy(plane.quaternion).multiply(q1.setFromEuler(e1.set(aim.ap, aim.ay, 0, 'YXZ')));
   } else if (mySeat === 0 && cockpit) {
-    setFov(75); camera.position.set(0, 2.3, -6.5).applyMatrix4(plane.matrixWorld); camera.quaternion.copy(plane.quaternion);
+    setFov(75); camera.position.set(-0.45, 1.5, -7.3).applyMatrix4(plane.matrixWorld); camera.quaternion.copy(plane.quaternion);
   } else {
     setFov(65); camYaw += wrap(pl.yaw - camYaw) * Math.min(1, 3.5 * dt);
     camera.position.set(pl.x + Math.sin(camYaw) * 42, Math.max(1.5, pl.y + 11 - Math.sin(pl.pitch) * 20), pl.z + Math.cos(camYaw) * 42);
@@ -392,16 +429,22 @@ function marker(x, y, z, color, label, dist) {
   ctx.beginPath(); ctx.moveTo(sx, sy - 9); ctx.lineTo(sx + 9, sy); ctx.lineTo(sx, sy + 9); ctx.lineTo(sx - 9, sy); ctx.closePath(); off ? ctx.fill() : ctx.stroke();
   ctx.font = `700 11px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText(`${label} ${(dist / 1000).toFixed(1)}km`, clamp(sx, 50, W - 50), sy + (sy > H - 60 ? -14 : 24));
 }
+function label(x, y, z, color, text) {
+  const p = project(x, y, z); if (p.behind) return;
+  ctx.font = `700 12px ${FONT}`; ctx.textAlign = 'center'; const w = ctx.measureText(text).width + 12;
+  ctx.fillStyle = PANEL; ctx.fillRect(p.x - w / 2, p.y - 14, w, 19); ctx.fillStyle = color; ctx.fillText(text, p.x, p.y);
+}
 function panel(x, y, w, h) { ctx.fillStyle = PANEL; ctx.fillRect(x, y, w, h); ctx.strokeStyle = 'rgba(138,132,85,.7)'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); }
 function bar(x, y, w, v, color) { ctx.fillStyle = 'rgba(255,255,255,.14)'; ctx.fillRect(x, y, w, 7); ctx.fillStyle = color; ctx.fillRect(x, y, w * clamp(v, 0, 1), 7); }
 
 function objective(S) {
   const pl = S.pl, pilot = mySeat === 0;
+  if (foot && S.ph !== 'ground') return 'The ship left without you. Wait for her to come home.';
   if (bailed) return 'You bailed out. Hang on to your chute…';
   if (S.ph === 'ground') {
-    if (S.svc) return 'Ground crew is fueling and arming the aircraft…';
     const ready = pl.fuel >= 99 && pl.bombs >= BOMBS_MAX && S.st.every((s, i) => !SEATS[i].gun || s[3] >= AMMO_MAX - 1);
-    if (!ready && pl.spd < 0.5) return 'Press R to take on fuel, ammunition and bombs';
+    if (foot) return ready ? 'She is loaded. Walk back to the plane and press F to climb aboard' : 'Walk into a ring and hold E: FUEL truck, AMMO crates, BOMB cart';
+    if (!ready && pl.spd < 0.5) return 'Press F to climb out, then load fuel, ammo and bombs on the runway';
     return pilot ? 'Take off: hold SHIFT for full throttle, pull back (S) at 110 mph' : 'Stand by for takeoff';
   }
   if (pl.doomed) return 'WE ARE GOING DOWN — PRESS J TWICE TO BAIL OUT';
@@ -421,7 +464,7 @@ function drawHUD(S, dt) {
   // world markers
   if (S.tg[2] > 0) marker(S.tg[0], 20, S.tg[1], '#ffb347', 'TARGET', dT);
   if (dB > 1500) marker(0, 5, -300, '#8fd0ff', 'BASE', dB);
-  const gunner = mySeat > 0 && !bombsight, pv = planeVel(pl);
+  const gunner = mySeat > 0 && !bombsight && !foot, pv = planeVel(pl);
   for (const f of S.f) {
     if (f[7] & 2) continue;
     const d = Math.hypot(f[1] - camera.position.x, f[2] - camera.position.y, f[3] - camera.position.z); if (d > 3500) continue;
@@ -451,7 +494,7 @@ function drawHUD(S, dt) {
   panel(cx - ow / 2, 10, ow, 30); ctx.fillStyle = pl.doomed ? '#ff7a5a' : AMBER; ctx.fillText(obj, cx, 30, ow - 16);
   // crew list
   ctx.font = `600 12px ${FONT}`; ctx.textAlign = 'left';
-  const cw = 246, cx0 = W - cw - 10, cy0 = small ? 48 : 10; panel(cx0, cy0, cw, 20 + 18 * 5 + 20);
+  const cw = 246, cx0 = W - cw - 10, cy0 = W < 1150 ? 48 : 10; panel(cx0, cy0, cw, 20 + 18 * 5 + 20);
   ctx.fillStyle = '#a9a37f'; ctx.fillText(`CREW ${roomCode} · keys 1-5 change seat`, cx0 + 8, cy0 + 15);
   S.st.forEach((s, i) => {
     const me = i === mySeat, y = cy0 + 34 + i * 18;
@@ -460,7 +503,7 @@ function drawHUD(S, dt) {
     ctx.fillText(`${me ? '>' : ' '}${i + 1} ${SEATS[i].name.padEnd(11)} ${who}`.slice(0, 31), cx0 + 6, y);
     if (SEATS[i].gun && !s[7]) bar(cx0 + cw - 34, y - 7, 26, s[3] / AMMO_MAX, s[3] < 80 ? '#ff7a5a' : '#b7c97a');
   });
-  ctx.fillStyle = '#a9a37f'; ctx.fillText(`You: ${rankName(missions)}`, cx0 + 8, cy0 + 34 + 5 * 18);
+  ctx.fillStyle = '#a9a37f'; ctx.fillText(`You: ${rankName(missions)}${foot ? ' · on foot' : ''}`, cx0 + 8, cy0 + 34 + 5 * 18);
   // instruments
   const ih = 132, iw = 250, ix = 10, iy = H - ih - 10; panel(ix, iy, iw, ih);
   const hdg = ((Math.round(-pl.yaw * 180 / Math.PI) % 360) + 360) % 360;
@@ -486,7 +529,16 @@ function drawHUD(S, dt) {
   for (let i = msgs.length - 1; i >= 0; i--) { const a = 1 - (now - msgs[i].t - 9000) / 2000; if (a <= 0) continue; ctx.globalAlpha = clamp(a, 0, 1); const w = Math.min(W - 20, ctx.measureText(msgs[i].s).width + 12); ctx.fillStyle = PANEL; ctx.fillRect(10, myy - 13, w, 18); ctx.fillStyle = '#f3eed6'; ctx.fillText(msgs[i].s, 16, myy, W - 32); myy -= 20; }
   ctx.globalAlpha = 1;
   // help line
-  if (mySeat >= 0 && !small) { ctx.textAlign = 'center'; ctx.font = `600 11px ${FONT}`; const t = `${SEATS[mySeat].name.toUpperCase()}: ${HELP[mySeat]} · R service · J J bail out`; const w = ctx.measureText(t).width + 20; ctx.fillStyle = PANEL; ctx.fillRect(cx - w / 2, H - 28, w, 20); ctx.fillStyle = '#c9c3a4'; ctx.fillText(t, cx, H - 14); }
+  if (foot) {
+    const ammo = Math.min(...S.st.filter((s, i) => SEATS[i].gun).map(s => s[3])) / AMMO_MAX;
+    const tag = (k, y, c, name, v) => { const d = Math.hypot(foot.x - STN[k][0], foot.z - STN[k][1]); label(STN[k][0], y, STN[k][1], c, `${name} ${Math.round(v * 100)}%${d < STN_R ? (v >= 1 ? ' · full' : ' · hold E') : ''}`); };
+    tag('fuel', 4.5, '#ffb347', 'FUEL', pl.fuel / 100); tag('ammo', 3.5, AMBER, 'AMMO', ammo); tag('bombs', 3.5, '#ff7a5a', 'BOMBS', pl.bombs / BOMBS_MAX);
+    const dp = Math.hypot(foot.x - pl.x, foot.z - pl.z);
+    if (!pl.crashed && pl.ground) label(pl.x, pl.y + 5, pl.z, '#8fd0ff', dp < 25 ? 'B-17 · press F to board' : 'B-17');
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.stroke();
+    if (!small) { ctx.textAlign = 'center'; ctx.font = `600 11px ${FONT}`; const t = 'ON FOOT: W/A/S/D walk · SHIFT run · MOUSE or arrows look · E load (in a ring) · F board (near the plane)'; const w = ctx.measureText(t).width + 20; ctx.fillStyle = PANEL; ctx.fillRect(cx - w / 2, H - 28, w, 20); ctx.fillStyle = '#c9c3a4'; ctx.fillText(t, cx, H - 14); }
+  }
+  if (mySeat >= 0 && !small) { ctx.textAlign = 'center'; ctx.font = `600 11px ${FONT}`; const t = `${SEATS[mySeat].name.toUpperCase()}: ${HELP[mySeat]} · F climb out (parked) · J J bail out`; const w = ctx.measureText(t).width + 20; ctx.fillStyle = PANEL; ctx.fillRect(cx - w / 2, H - 28, w, 20); ctx.fillStyle = '#c9c3a4'; ctx.fillText(t, cx, H - 14); }
   if (hitFlash > 0) { hitFlash -= dt; ctx.fillStyle = `rgba(255,40,20,${hitFlash * 0.5})`; ctx.fillRect(0, 0, W, H); }
 }
 
@@ -494,7 +546,7 @@ function drawHUD(S, dt) {
 let last = performance.now(), lobbyA = 0;
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const dt = Math.min(0.12, (now - last) / 1000); last = now;
   const S = interp(now);
   if (S) { updateWorld(S, dt); updateCamera(S, dt); }
   else { lobbyA += dt * 0.1; setFov(55); camera.up.set(0, 1, 0); camera.position.set(Math.sin(lobbyA) * 46, 9, 500 + Math.cos(lobbyA) * 46); camera.lookAt(0, 3, 500); }

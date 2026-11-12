@@ -43,7 +43,7 @@ wss.on('connection', ws => {
       room.addPlayer(player);
       ws.send(JSON.stringify({ t: 'welcome', id: player.id, room: code }));
     } else if (player) {
-      if (m.t === 'in') Object.assign(player.in, { p: m.p, r: m.r, y: m.y, th: m.th, br: m.br, ay: m.ay, ap: m.ap, f: m.f, d: m.d });
+      if (m.t === 'in') Object.assign(player.in, { p: m.p, r: m.r, y: m.y, th: m.th, br: m.br, ay: m.ay, ap: m.ap, f: m.f, d: m.d, fx: m.fx, fz: m.fz, fy: m.fy, use: m.use });
       else if (m.t === 'seat') room.setSeat(player, m.i | 0);
       else if (m.t === 'act') room.action(player, String(m.a));
     }
