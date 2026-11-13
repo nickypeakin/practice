@@ -14,6 +14,8 @@ so friends on the same server join your bomber. Set `PORT` to change the port.
 
 ## Mission
 
+The world is mostly open sea. The airfield sits on one island and the target on another, with more islands scattered between. Bombs that miss land throw up a column of water.
+
 1. You start in the air, in formation with six other B-17s, about 10 km from the target. The YOUR SLOT marker shows where your ship belongs; the other bombers' guns cover you while you stay close.
 2. Fighters come in waves and go for the whole formation. Fight them off, bomb the target, then follow the formation home.
 3. Break off near BASE, land with the gear down and brake to a stop.

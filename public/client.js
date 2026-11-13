@@ -28,7 +28,19 @@ const lam = (color, o = {}) => new THREE.MeshLambertMaterial({ color, ...o });
 const box = (w, h, d, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); return m; };
 const cylZ = (r1, r2, len, mat, x = 0, y = 0, z = 0, seg = 14) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, seg), mat); m.rotation.x = Math.PI / 2; m.position.set(x, y, z); return m; };
 
-// ground
+// The world is mostly sea. Land is islands: one under the airfield, one under the target (it moves with the target), and a scattering of others.
+const ISLES = [[0, -300, 3200]];
+{ let seed = 23; const rr = () => (seed = (seed * 16807) % 2147483647) / 2147483647; for (let i = 0; i < 16; i++) { const x = (rr() - 0.5) * 56000, z = (rr() - 0.5) * 56000, r = 500 + rr() * 2200; if (Math.hypot(x, z + 300) > 4500 + r) ISLES.push([x, z, r]); } }
+const TARGET_ISLE = 950;
+let seaTex, landMat, sandMat;
+function makeIsland(r, seed) {
+  const rr = () => (seed = (seed * 16807) % 2147483647) / 2147483647, n = 28, k = Array.from({ length: n }, () => 0.72 + rr() * 0.4), g = new THREE.Group();
+  const outline = grow => { const sh = new THREE.Shape(); for (let i = 0; i <= n; i++) { const a = i / n * Math.PI * 2, q = (k[i % n] + k[(i + 1) % n]) / 2 * r + grow, x = Math.cos(a) * q, y = Math.sin(a) * q; i ? sh.lineTo(x, y) : sh.moveTo(x, y); } return new THREE.ShapeGeometry(sh); };
+  const sand = new THREE.Mesh(outline(70), sandMat); sand.rotation.x = -Math.PI / 2; sand.position.y = -0.7; g.add(sand);
+  const land = new THREE.Mesh(outline(0), landMat); land.rotation.x = -Math.PI / 2; land.position.y = 0; g.add(land);
+  return g;
+}
+const onLand = (x, z, tg) => ISLES.some(i => Math.hypot(x - i[0], z - i[1]) < i[2] * 0.8) || (tg && Math.hypot(x - tg[0], z - tg[1]) < TARGET_ISLE * 0.8);
 {
   const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
   g.fillStyle = '#5f7a3c'; g.fillRect(0, 0, 512, 512);
@@ -37,9 +49,16 @@ const cylZ = (r1, r2, len, mat, x = 0, y = 0, z = 0, seg = 14) => { const m = ne
   for (let i = 0; i < 260; i++) { g.fillStyle = cols[Math.floor(rr() * cols.length)]; g.fillRect(Math.floor(rr() * 16) * 32, Math.floor(rr() * 16) * 32, 32 * (1 + Math.floor(rr() * 2)), 32 * (1 + Math.floor(rr() * 2))); }
   g.strokeStyle = '#3f5a2c'; g.lineWidth = 2; for (let i = 0; i <= 16; i += 2) { g.beginPath(); g.moveTo(i * 32, 0); g.lineTo(i * 32, 512); g.stroke(); }
   g.fillStyle = '#31502a'; for (let i = 0; i < 40; i++) { g.beginPath(); g.arc(rr() * 512, rr() * 512, 6 + rr() * 16, 0, 7); g.fill(); }
-  const tex = new THREE.CanvasTexture(c); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(100, 100); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(120000, 120000, 240, 240), new THREE.MeshLambertMaterial({ map: tex }));
-  ground.rotation.x = -Math.PI / 2; scene.add(ground);
+  const tex = new THREE.CanvasTexture(c); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(1 / 1200, 1 / 1200); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  landMat = new THREE.MeshLambertMaterial({ map: tex }); sandMat = lam(0xcdbf8e);
+  // sea
+  const w = document.createElement('canvas'); w.width = w.height = 512; const s = w.getContext('2d');
+  s.fillStyle = '#2c5f86'; s.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 70; i++) { s.fillStyle = `rgba(${rr() < 0.5 ? '18,52,84' : '70,128,160'},${0.08 + rr() * 0.14})`; s.beginPath(); s.ellipse(rr() * 512, rr() * 512, 30 + rr() * 90, 8 + rr() * 22, rr() * 0.6 - 0.3, 0, 7); s.fill(); }
+  s.strokeStyle = 'rgba(215,235,245,.35)'; s.lineWidth = 1.2; for (let i = 0; i < 260; i++) { const x = rr() * 512, y = rr() * 512, l = 5 + rr() * 16; s.beginPath(); s.moveTo(x, y); s.quadraticCurveTo(x + l / 2, y - 2 - rr() * 2, x + l, y); s.stroke(); }
+  seaTex = new THREE.CanvasTexture(w); seaTex.wrapS = seaTex.wrapT = THREE.RepeatWrapping; seaTex.repeat.set(260, 260); seaTex.colorSpace = THREE.SRGBColorSpace; seaTex.anisotropy = 8;
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(160000, 160000), new THREE.MeshLambertMaterial({ map: seaTex })); sea.rotation.x = -Math.PI / 2; sea.position.y = -1.6; scene.add(sea);
+  ISLES.forEach((i, n) => { const m = makeIsland(i[2], 100 + n * 37); m.position.set(i[0], 0, i[1]); scene.add(m); });
 }
 // airfield (runway z = +700 .. -1300)
 {
@@ -62,7 +81,7 @@ const cylZ = (r1, r2, len, mat, x = 0, y = 0, z = 0, seg = 14) => { const m = ne
   }
 }
 // target factory
-const target = new THREE.Group(); target.visible = false; scene.add(target);
+const target = new THREE.Group(); target.visible = false; scene.add(target); target.add(makeIsland(TARGET_ISLE, 911));
 const tgtMat = lam(0x7a5a48), tgtRoof = lam(0x4a4440), tgtBurnt = lam(0x1c1a18);
 {
   let seed = 31; const rr = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -487,6 +506,11 @@ function puff(x, y, z, size, life, color, grow = 2, vy = 2) {
   const p = puffs[puffIdx = (puffIdx + 1) % puffs.length];
   p.m.position.set(x, y, z); p.m.scale.setScalar(size); p.m.material.color.set(color); p.life = p.max = life; p.grow = grow; p.vy = vy; p.m.visible = true;
 }
+// a bomb in the sea: a white column of water
+function splash(x, z) {
+  for (let i = 0; i < 9; i++) puff(x + (Math.random() - 0.5) * 22, 4 + i * 7 * Math.random(), z + (Math.random() - 0.5) * 22, 9 + Math.random() * 8, 2 + Math.random() * 2, i % 3 ? 0xf2f6f8 : 0xc9dde8, 0.7, 14 - i);
+  noise(1.4, 500, 0.12);
+}
 function explosion(x, y, z, size) {
   for (let i = 0; i < 6; i++) puff(x + (Math.random() - 0.5) * size, y + Math.random() * size * 0.6, z + (Math.random() - 0.5) * size, size * 0.5, 0.5 + Math.random() * 0.4, i % 2 ? 0xffb347 : 0xff6a2a, 3, 4);
   for (let i = 0; i < 5; i++) puff(x + (Math.random() - 0.5) * size, y + Math.random() * size, z + (Math.random() - 0.5) * size, size * 0.6, 2.5 + Math.random() * 2, 0x3a3836, 0.9, 6);
@@ -593,7 +617,7 @@ function onSnap(m) {
   m.rt = performance.now(); snaps.push(m); if (snaps.length > 6) snaps.shift(); latest = m;
   for (const e of m.ev) {
     if (e.k === 'msg') { addMsg(e.s, e.w ? 2 : e.r); if (e.r) { radioClick(); speak(e.s); } }
-    else if (e.k === 'boom') explosion(e.x, 0, e.z, 45);
+    else if (e.k === 'boom') { if (onLand(e.x, e.z, m.tg)) explosion(e.x, 0, e.z, 45); else splash(e.x, e.z); }
     else if (e.k === 'kill') explosion(e.x, e.y, e.z, 14);
     else if (e.k === 'crash') explosion(e.x, e.y, e.z, 40);
     else if (e.k === 'hit') { hitFlash = 0.35; shake = 0.35; noise(0.12, 2500, 0.3); thump(220, 0.15, 0.25, 'triangle'); bulletHole(m.mid); }
@@ -1101,6 +1125,7 @@ function frame(now) {
   if (S) { updateWorld(S, dt); updateCamera(S, dt); }
   else { lobbyA += dt * 0.1; setFov(55); camera.up.set(0, 1, 0); camera.position.set(Math.sin(lobbyA) * 58, 11, 500 + Math.cos(lobbyA) * 58); camera.lookAt(0, 4, 500); }
   updEffects(dt);
+  seaTex.offset.x += dt * 0.0012; seaTex.offset.y += dt * 0.0007;       // a slow swell
   renderer.render(scene, camera);
   drawHUD(S, dt);
 }
