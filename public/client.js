@@ -577,6 +577,7 @@ let menu = false;  // crew orders menu open
 let missions = +store.get('b17.missions', 0) || 0, creditedMid = 0, resHide = 0;
 const msgs = []; let hitFlash = 0, shake = 0, hitMark = 0, fade = 0, stepDist = 0, bob = 0, holeMid = 0;
 const plook = { yaw: 0, pitch: 0 };   // pilot's head
+const jump = { yaw: 0, pitch: -0.9, t: 0, jolt: 0, landed: 0, dead: false };   // my own fall
 const keys = {}; let mouseFire = false;
 
 $('rank').textContent = `${rankName(missions)} (${missions} mission${missions === 1 ? '' : 's'})`;
@@ -622,6 +623,8 @@ function onSnap(m) {
     else if (e.k === 'crash') explosion(e.x, e.y, e.z, 40);
     else if (e.k === 'hit') { hitFlash = 0.35; shake = 0.35; noise(0.12, 2500, 0.3); thump(220, 0.15, 0.25, 'triangle'); bulletHole(m.mid); }
     else if (e.k === 'flak') flakBurst(e.x, e.y, e.z);
+    else if (e.k === 'open' && e.id === myId) { jump.jolt = 1; shake = 0.9; noise(0.5, 900, 0.35); thump(60, 0.4, 0.4); }
+    else if (e.k === 'land' && e.id === myId) { jump.landed = 1; jump.dead = !!e.dead; shake = e.dead ? 1.5 : 0.5; thump(50, 0.5, 0.5); noise(0.4, 300, 0.3); if (e.dead) hitFlash = 2; }
     else if (e.k === 'fhit') { const f = m.f.find(f => f[0] === e.id); if (f) { sparks(f[1], f[2], f[3], 5, 1.6); puff(f[1], f[2], f[3], 2, 0.8, 0x555555, 2, 0); } if (mySeat > 0 && m.st[mySeat][6]) { hitMark = 0.18; noise(0.04, 5000, 0.12); } }
   }
   // result screen + rank. After a landing the card goes away so the crew can walk around.
@@ -702,6 +705,7 @@ addEventListener('keydown', e => {
   if (!myId) return;
   const k = e.key.toLowerCase(); if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'tab'].includes(k)) e.preventDefault();
   if (keys[k]) return; keys[k] = true;
+  if (bailed) { if (k === ' ' || k === 'e') send({ t: 'act', a: 'chute' }); else if (k === 'n') send({ t: 'act', a: 'next' }); return; }
   if (k === 'c') menu = !menu;
   else if (k === 'escape') menu = false;
   else if (menu && k >= '0' && k <= '9') { giveOrder(+k); menu = false; }
@@ -720,12 +724,13 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouseFire = false; });
 hud.style.pointerEvents = 'none';
-$('gl').addEventListener('mousedown', () => { if (!myId) return; if (document.pointerLockElement !== $('gl')) $('gl').requestPointerLock?.(); mouseFire = true; });
+$('gl').addEventListener('mousedown', () => { if (!myId) return; if (bailed) send({ t: 'act', a: 'chute' }); if (document.pointerLockElement !== $('gl')) $('gl').requestPointerLock?.(); mouseFire = true; });
 addEventListener('mouseup', () => { mouseFire = false; });
 addEventListener('mousemove', e => {
   if (document.pointerLockElement !== $('gl')) return;
   const w = foot || walk;
   if (w) { w.yaw -= e.movementX * 0.0025; w.pitch = clamp(w.pitch - e.movementY * 0.0025, -1.3, 1.3); return; }
+  if (bailed) { jump.yaw -= e.movementX * 0.0025; jump.pitch = clamp(jump.pitch - e.movementY * 0.0025, -1.5, 1.4); return; }
   if (mySeat === 0) { plook.yaw = clamp(plook.yaw - e.movementX * 0.0025, -2.5, 2.5); plook.pitch = clamp(plook.pitch - e.movementY * 0.0025, -1.0, 1.1); return; }
   if (mySeat < 1) return;
   const s = bombsight ? 0 : 0.0022; aim.ay -= e.movementX * s; aim.ap -= e.movementY * s;
@@ -880,7 +885,7 @@ function updateWorld(S, dt) {
     if (f) { v1.set(e[1], e[2] + 1, e[3]); v2.set(f[1] - e[1] + (Math.random() - 0.5) * 30, f[2] - e[2] + (Math.random() - 0.5) * 30, f[3] - e[3] + (Math.random() - 0.5) * 30).normalize().multiplyScalar(BULLET_SPD); spawnTracer(v1, v2, false); }
   });
   sync(objs.b, S.b, makeBomb, o => { o.rotation.x = Math.PI / 2 + 0.6; });
-  sync(objs.c, S.c, makeChute, (o, e) => { o.userData.canopy.visible = !!e[5]; });
+  sync(objs.c, S.c, makeChute, (o, e) => { o.userData.canopy.visible = !!e[5]; o.children[1].visible = e[4] !== myId; });
   // smoke
   if (fx && !pl.crashed) {
     pl.eng.forEach((h, i) => { if (h < 40) { v1.copy(engSmokePos[i]).applyMatrix4(plane.matrixWorld); puff(v1.x, v1.y, v1.z, h <= 0 ? 2.2 : 1.2, 2, h <= 0 ? 0x1c1c1c : 0x777777, 1.3, 1); } });
@@ -895,7 +900,7 @@ function updateWorld(S, dt) {
   if (pl.crashed && fx && Math.random() < 0.4) puff(pl.x, 3, pl.z, 6, 5, 0x1a1a1a, 0.6, 10);
   if (engGain) engGain.gain.value = pl.crashed || !pl.eng.some((h, i) => h > 0) || pl.fuel <= 0 ? 0 : 0.05 + pl.thr * 0.09;
   engOsc.forEach((o, i) => { o.frequency.value = [48, 73, 97.5][i] * (0.7 + pl.thr * 0.45); });
-  if (windGain) { const out = foot ? 0.3 : walk ? 0.5 : mySeat === 0 ? 0.6 : 1; windGain.gain.value = pl.crashed ? 0 : clamp(pl.spd / 100, 0, 1.2) * 0.05 * out; windFilt.frequency.value = 300 + pl.spd * 5; }
+  if (windGain) { const out = foot ? 0.3 : walk ? 0.5 : mySeat === 0 ? 0.6 : 1; const mc = bailed && S.c.find(c => c[4] === myId); windGain.gain.value = mc ? clamp(-mc[6] / 58, 0.05, 1) * 0.3 * (mc[2] > 0 ? 1 : 0) : pl.crashed ? 0 : clamp(pl.spd / 100, 0, 1.2) * 0.05 * out; windFilt.frequency.value = mc ? 500 - mc[6] * 14 : 300 + pl.spd * 5; }
 }
 
 let camYaw = 0, impact = null, camMode = '', blendT = 0, reloadDip = 0;
@@ -911,8 +916,15 @@ function updateCamera(S, dt) {
   } else if (walk) {
     mode = 'walk'; fov = 78; camera.position.set(walk.x + Math.cos(bob * 2.1) * 0.012, eyeY(walk.z) + Math.sin(bob * 4.2) * 0.022, walk.z).applyMatrix4(plane.matrixWorld);
     camera.quaternion.copy(plane.quaternion).multiply(q1.setFromEuler(e1.set(walk.pitch, walk.yaw, 0, 'YXZ')));
-  } else if (myChute && S.ph !== 'ended') {
-    mode = 'chute'; fov = 65; local = false; camera.position.set(myChute[1] + 6, myChute[2] + 3, myChute[3] + 12); camera.lookAt(pl.x, pl.y, pl.z);
+  } else if (myChute) {
+    // first person: tumbling free fall until you pull, then swinging under the canopy
+    mode = 'chute'; local = false; jump.t += dt; jump.jolt *= Math.exp(-dt * 2.5);
+    const open = myChute[5], down = myChute[2] <= 0, sp = clamp(-myChute[6] / 58, 0, 1), T = performance.now() / 1000;
+    fov = open ? 72 : 78 + sp * 10;
+    camera.position.set(myChute[1], Math.max(1.6, myChute[2] + 1.2), myChute[3]);
+    const wob = down ? 0 : open ? 0.06 : 0.05 + sp * 0.12;
+    camera.rotation.set(jump.pitch + Math.sin(T * (open ? 0.9 : 2.3)) * wob - jump.jolt * 0.5, jump.yaw + (open ? Math.sin(T * 0.5) * 0.08 : jump.t * 0.25 * sp), Math.sin(T * (open ? 0.7 : 1.7)) * wob * 1.5, 'YXZ');
+    if (!open && !down) { camera.position.x += (Math.random() - 0.5) * 0.12 * sp; camera.position.y += (Math.random() - 0.5) * 0.12 * sp; }
   } else if (mySeat > 0 && bombsight) {
     mode = 'sight'; local = false; impact = impactPoint(pl); fov = 22;
     camera.position.set(pl.x, pl.y - 2.5, pl.z); camera.up.set(-Math.sin(pl.yaw), 0, -Math.cos(pl.yaw)); camera.lookAt(impact.x, 0, impact.z);
@@ -937,7 +949,7 @@ function updateCamera(S, dt) {
   plane.worldToLocal(v1.copy(camera.position)); q2.copy(plane.quaternion).invert().multiply(camera.quaternion);
   if (mode !== camMode) {
     const ok = camMode && local && camMode !== 'ext' && camMode !== 'chute' && camMode !== 'sight';
-    if (ok && v1.distanceTo(lastP) < 5) { blendT = BLEND; fromP.copy(lastP); fromQ.copy(lastQ); } else { blendT = 0; if (camMode) fade = 0.45; }
+    if (ok && v1.distanceTo(lastP) < 5) { blendT = BLEND; fromP.copy(lastP); fromQ.copy(lastQ); } else { blendT = 0; if (camMode && mode !== 'chute') fade = 0.45; if (mode === 'chute') { jump.yaw = pl.yaw; jump.pitch = -0.9; jump.t = 0; jump.jolt = 0; jump.landed = 0; jump.dead = false; } }
     if (mode === 'pilot') plook.yaw = plook.pitch = 0;
     camMode = mode;
   }
@@ -976,7 +988,11 @@ function strip(t, y, color = '#c9c3a4', size = 11) { ctx.textAlign = 'center'; c
 
 function objective(S) {
   const pl = S.pl, pilot = mySeat === 0;
-  if (bailed) return 'You jumped. Hang on to your chute…';
+  if (bailed) {
+    const c = S.c.find(c => c[4] === myId);
+    if (!c || c[2] <= 0) return jump.dead ? 'You did not make it.' : 'You are down safe. Wait for the next mission.';
+    return c[5] ? 'Canopy open. Ride it down.' : 'FREE FALL: press SPACE (or click) to open your parachute!';
+  }
   if (S.ph === 'ended') {
     if (pl.crashed) return 'The Fortress is lost.';
     if (foot) return `On the field. F at the crew door climbs in · next mission in ${S.endT}s (N)`;
@@ -1025,6 +1041,14 @@ function drawHUD(S, dt) {
     ctx.fillStyle = AMBER; ctx.font = `700 13px ${FONT}`; ctx.textAlign = 'center';
     ctx.fillText(`BOMBSIGHT · impact in ${impact ? impact.t.toFixed(1) : '--'}s · doors ${pl.doors ? 'OPEN' : 'CLOSED (O)'} · ${pl.bombs} bombs`, cx, cy + R - 18);
   } else if (foot || walk) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.stroke(); }
+  // my own jump: altitude, fall speed, and when to pull
+  const jc = bailed && S.c.find(c => c[4] === myId);
+  if (jc && jc[2] > 0) {
+    const alt = jc[2], low = !jc[5] && alt < 350, blink = Math.floor(performance.now() / 250) % 2;
+    ctx.textAlign = 'center'; ctx.font = `700 26px ${FONT}`; ctx.fillStyle = low ? (blink ? '#ff5a4a' : '#ffe04a') : '#f3eed6';
+    ctx.fillText(`${Math.round(alt * 3.28)} ft`, cx, H * 0.3); ctx.font = `600 14px ${FONT}`; ctx.fillText(`falling ${Math.round(-jc[6] * 2.237)} mph`, cx, H * 0.3 + 22);
+    if (!jc[5]) strip(low ? 'PULL NOW!  SPACE' : 'SPACE or CLICK opens your parachute', H * 0.3 + 52, low ? '#ff5a4a' : AMBER, 16);
+  } else if (jc && jump.dead) { ctx.fillStyle = 'rgba(40,0,0,.55)'; ctx.fillRect(0, 0, W, H); }
   // objective
   ctx.textAlign = 'center'; ctx.font = `700 ${small ? 12 : 15}px ${FONT}`;
   const obj = objective(S), ow = Math.min(W < 1250 ? W - 24 : W - 300, ctx.measureText(obj).width + 28);

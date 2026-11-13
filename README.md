@@ -41,7 +41,7 @@ The world is mostly open sea. The airfield sits on one island and the target on 
 - **F** gets you up from your station at any time, in flight too. Walk with W/A/S/D, look with the mouse. If the pilot gets up, the copilot (bot) flies.
 - **E** next to a station takes it (the bot steps aside). Keys **1-7** still jump straight to a station from another one.
 - Stations nose to tail: bombardier, flight deck, top turret, bomb bay, radio room, ball turret, waist guns, crew door, tail gun.
-- **Bailing out**: open the bomb bay doors (**O**), walk onto the catwalk and step off it sideways. In the air you go out on a parachute (you survive but get no promotion); parked, you drop onto the field.
+- **Bailing out**: open the bomb bay doors (**O**), walk onto the catwalk and step off it sideways. In the air you are in free fall: look around with the mouse and press **Space** (or click) to open your parachute. Open it too low, or not at all, and you are killed. Land safely and you survive but get no promotion. Parked, you just drop onto the field.
 
 ## Crew orders (C opens the menu, then a number)
 

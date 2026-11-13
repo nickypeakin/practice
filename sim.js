@@ -78,7 +78,7 @@ export class Room {
     this.fighters = []; this.bullets = []; this.bombsAir = []; this.chutes = []; this.ev = [];
     this.waveT = 10; this.result = null; this.endT = 0; this.crashT = 0; this.noCrewT = 0; this.kills = 0; this.fkills = 0;
     this.bot = { app: 'iaf', broke: false, said: {} };
-    for (const p of this.players.values()) { p.bailed = false; p.foot = null; p.walk = null; const s = p.seat; p.seat = -1; if (s >= 0 && !this.seats[s].pid) { this.seats[s].pid = p.id; p.seat = s; } }
+    for (const p of this.players.values()) { p.bailed = false; p.dead = false; p.foot = null; p.walk = null; const s = p.seat; p.seat = -1; if (s >= 0 && !this.seats[s].pid) { this.seats[s].pid = p.id; p.seat = s; } }
     for (const p of this.players.values()) if (p.seat < 0) this.autoSeat(p);
     this.msg(`Mission ${this.mid}: you are in formation, ${(sd / 1000).toFixed(0)} km from the target. Hold your slot and watch for fighters.`);
   }
@@ -124,6 +124,11 @@ export class Room {
   action(p, a, m) {
     const pl = this.pl;
     if (a === 'next') { if (this.phase === 'ended' && this.endT > 0.5) this.endT = 0.5; return; }
+    if (a === 'chute') {          // pull the ripcord
+      const ch = this.chutes.find(c => c.pid === p.id && c.y > 0);
+      if (ch && !ch.open) { ch.open = true; this.ev.push({ k: 'open', id: p.id }); }
+      return;
+    }
     if (pl.crashed || p.bailed) return;
     if (a === 'board') {          // climb in through the crew door
       const d = this.doorGround();
@@ -200,7 +205,7 @@ export class Room {
       this.msg(`${p.name} dropped out of the bomb bay.`);
     } else {
       p.bailed = true;
-      this.chutes.push({ id: this.uid++, x: pl.x + o[0], y: pl.y + o[1], z: pl.z + o[2], vy: Math.min(pl.vy, 0) - 4, pid: p.id, t: 1.6 });
+      this.chutes.push({ id: this.uid++, x: pl.x + o[0], y: pl.y + o[1], z: pl.z + o[2], vx: planeVel(pl)[0], vz: planeVel(pl)[2], vy: Math.min(pl.vy, 0) - 4, pid: p.id, open: false });
       this.msg(`${p.name} jumped from the bomb bay!`);
     }
   }
@@ -232,8 +237,15 @@ export class Room {
     this.updFighters(dt);
     for (const ch of this.chutes) {
       if (ch.y <= 0) continue;
-      if (ch.t > 0) { ch.t -= dt; ch.vy -= G * dt; } else ch.vy += (-6.5 - ch.vy) * Math.min(1, 1.5 * dt);
-      ch.y = Math.max(0, ch.y + ch.vy * dt);
+      if (!ch.pid && !ch.open && (ch.t -= dt) <= 0) ch.open = true;         // bots pull their own; players have to do it
+      if (ch.open) ch.vy += (-6.5 - ch.vy) * Math.min(1, 1.6 * dt);
+      else ch.vy -= G * (1 - Math.min(1, (ch.vy / 58) ** 2)) * dt;          // free fall towards terminal velocity
+      const drag = Math.exp(-dt * (ch.open ? 1.2 : 0.3)); ch.vx = (ch.vx || 0) * drag; ch.vz = (ch.vz || 0) * drag;
+      ch.x += ch.vx * dt; ch.z += ch.vz * dt; ch.y += ch.vy * dt;
+      if (ch.y <= 0) {
+        ch.y = 0; const p = ch.pid && this.players.get(ch.pid);
+        if (p) { if (ch.vy < -14) { p.dead = true; this.msg(ch.open ? `${p.name} opened too late and hit hard.` : `${p.name}'s parachute never opened.`); } else this.msg(`${p.name} is down safe.`); this.ev.push({ k: 'land', id: p.id, dead: p.dead ? 1 : 0 }); }
+      }
     }
 
     // bots abandon a doomed ship
@@ -246,9 +258,10 @@ export class Room {
     // end conditions
     if (this.phase !== 'ended') {
       let aboard = 0; for (const p of this.players.values()) if (!p.bailed && !p.foot) aboard++;
-      if (pl.crashed) { if ((this.crashT += dt) > 3) this.end('lost'); }
+      const falling = this.chutes.some(c => c.pid && c.y > 0 && this.players.has(c.pid));    // let jumpers reach the ground before the mission is scored
+      if (pl.crashed) { if ((this.crashT += dt) > 3 && !falling) this.end('lost'); }
       else if (pl.ground && pl.spd < 0.5) this.end(this.atBase() ? (this.tgt.hp <= 0 ? 'success' : 'aborted') : 'ditched');
-      else if (aboard === 0 && this.players.size) { if ((this.noCrewT += dt) > 6) this.end('lost'); }
+      else if (aboard === 0 && this.players.size) { if (!falling && (this.noCrewT += dt) > 4) this.end('lost'); }
     }
   }
 
@@ -298,7 +311,7 @@ export class Room {
     this.phase = 'ended'; this.endT = outcome === 'lost' ? 14 : 90;   // after a landing the crew gets time to climb out and walk around
     const res = { outcome, tgt: this.tgt.hp <= 0, crewLost: this.seats.filter(s => s.dead).length + (this.seats[0].pdead && !this.seats[0].dead ? 1 : 0), kills: this.kills, fkills: this.fkills, lost: this.wing.filter(b => b.dead).length + SLOTS.length - this.wing.length, players: [] };
     for (const p of this.players.values()) {
-      const status = p.bailed ? 'bailed' : outcome === 'success' ? 'credit' : outcome === 'lost' ? 'kia' : 'none';
+      const status = p.bailed ? (p.dead ? 'kia' : 'bailed') : outcome === 'success' ? 'credit' : outcome === 'lost' ? 'kia' : 'none';
       if (status === 'credit') p.missions++;
       res.players.push({ id: p.id, name: p.name, status, missions: p.missions });
     }
@@ -705,7 +718,7 @@ export class Room {
       f: this.fighters.map(f => [f.id, r2(f.p[0]), r2(f.p[1]), r2(f.p[2]), r2(f.dir[0] * f.spd), r2(f.dir[1] * f.spd), r2(f.dir[2] * f.spd), (f.firing ? 1 : 0) | (f.dead ? 2 : 0) | (f.hp <= 50 ? 4 : 0)]),
       w: this.wing.map(b => [b.id, r2(b.x), r2(b.y), r2(b.z), r3(b.yaw), r3(b.roll), r3(b.pitch), b.dead ? 2 : 0, b.fid]),
       b: this.bombsAir.map(b => [b.id, r2(b.x), r2(b.y), r2(b.z)]),
-      c: this.chutes.map(c => [c.id, r2(c.x), r2(c.y), r2(c.z), c.pid, c.t > 0 ? 0 : 1]),
+      c: this.chutes.map(c => [c.id, r2(c.x), r2(c.y), r2(c.z), c.pid, c.open ? 1 : 0, r2(c.vy)]),
       tg: [r2(this.tgt.x), r2(this.tgt.z), Math.round(this.tgt.hp)],
       sl: [r2(sl[0]), r2(sl[1]), r2(sl[2]), this.lead.leg],
       od: [o.fire, o.bomb, o.ap, o.focus],
