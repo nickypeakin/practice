@@ -3,6 +3,7 @@
 
 // The whole airframe is drawn and simulated this much larger than its local coordinates, so the crew has room inside.
 export const SCALE = 1.35;
+export const BELT = 125, RELOAD_T = 4.2;   // rounds per belt, seconds to change one
 export const AMMO_MAX = 500, BOMBS_MAX = 8, BULLET_SPD = 820, G = 9.81;
 
 // Seats. st = [x, z] where a crewman stands in the fuselage to man the station; gun.eye = camera height above the gun.

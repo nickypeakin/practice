@@ -27,6 +27,13 @@ so friends on the same server join your bomber. Set `PORT` to change the port.
 - Take a bot's station and he stands up and steps aside; leave it and he climbs back in. Your view moves into and out of the seat instead of cutting.
 - Flak bursts around the formation near the target. Hits punch holes in the skin that let daylight in.
 
+## Guns, wounds and first aid
+
+- Each gun feeds from 125-round belts. When a belt runs out the gunner changes it (about four seconds: cover up, new belt in, cover down, charge twice). **R** changes a part-used belt early.
+- Bullets and flak can hit the bot crew. A wounded man keeps fighting but shoots worse, and bleeds: walk to him and press **E** to give first aid, or he may die. A dead gunner's station is silent until a player takes it.
+- If the pilot is killed the copilot flies on. If both are lost, someone has to take the pilot's seat.
+- Intercom lines are spoken aloud where the browser supports it. **M** turns the voices off. **T** marks the fighter you are looking at for the gunners.
+
 ## Moving around the ship
 
 - **F** gets you up from your station at any time, in flight too. Walk with W/A/S/D, look with the mouse. If the pilot gets up, the copilot (bot) flies.
@@ -40,7 +47,7 @@ so friends on the same server join your bomber. Set `PORT` to change the port.
 |---|---|
 | 0 | Bay doors open / close |
 | 1 / 2 / 3 | Gunners: fire at will / close range only (saves ammo) / hold fire |
-| 4 | Gunners: focus the fighter you are looking at (**R** does the same without the menu) |
+| 4 | Gunners: focus the fighter you are looking at (**T** does the same without the menu) |
 | 5 / 6 / 7 | Bombardier: bomb the target himself / hold the bombs / salvo now |
 | 8 / 9 | Copilot: hold formation / take us home and land |
 
