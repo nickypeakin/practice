@@ -1,6 +1,11 @@
 # Fortress Crew
 
-Co-op B-17 bomber game for up to 7 players in the browser. Every station nobody holds is manned by a bot, and you give the bots their orders.
+Two games in one, played in the browser, and they can share a sky:
+
+- **Bomber crew** (up to 7 players): fly a B-17 in formation, walk the ship, man the guns, command the bot crew.
+- **Fighter pilot** (up to 6 players): fly an interceptor against the formation and shoot the Fortresses down.
+
+Pick a side in the lobby. Leave the code blank for a new game, or enter a code to join one. A fighter pilot who enters a bomber crew's code attacks that crew.
 
 ## Run
 
@@ -35,6 +40,31 @@ The world is mostly open sea. The airfield sits on one island and the target on 
 - Bullets and flak can hit the bot crew. A wounded man keeps fighting but shoots worse, and bleeds: walk to him and press **E** to give first aid, or he may die. A dead gunner's station is silent until a player takes it.
 - If the pilot is killed the copilot flies on. If both are lost, someone has to take the pilot's seat.
 - Intercom lines are spoken aloud where the browser supports it. **M** turns the voices off. **T** marks the fighter you are looking at for the gunners.
+
+## Fighter pilot
+
+- You spawn astern of and above the formation. Red boxes mark every Fortress; the white pip is where to aim when you are in range.
+- W/S pitch, A/D roll, Q/E rudder, Shift/Z throttle, Space or click to fire, mouse to look around the cockpit, V for the chase view.
+- The bombers' gunners shoot back. If you are hit hard the fighter goes down: press **J** twice, the canopy swings open and you go over the side.
+- One time in eight you hit the tail of your own fighter going out, and that kills you.
+- Shot down, crashed or landed by parachute, you get a new fighter a few seconds later.
+
+## Parachutes
+
+- Leaving any aircraft starts with a somersault into free fall; you can see your own arms and legs. **Space** or a click pulls the ripcord and the canopy streams out and fills.
+- One parachute in eight is a dud: it streams and never opens.
+- Open too low and you hit too hard.
+
+## Aerobatics
+
+Both aircraft roll all the way over and loop. The bomber is slow about it: hold A or D to roll right onto her back, and she will not right herself from there.
+
+## Men on the floor
+
+- A crewman who is hit may be wounded, knocked unconscious, or killed. The dead and the unconscious lie on the floor by their station.
+- Walk up and press **G** to pick a man up, **G** again to put him down.
+- Carry him onto the bomb bay catwalk with the doors open and **G** pushes him out. A dead man simply falls. An unconscious man goes out on a static line, his parachute opens, and he lives.
+- Or leave them where they are. An unconscious man sometimes comes round on his own.
 
 ## Moving around the ship
 

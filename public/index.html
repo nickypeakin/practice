@@ -22,6 +22,13 @@
   #err { color: #ff8f7a; min-height: 16px; font-size: 12px; margin-top: 8px; }
   #result .row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 5px 0; border-top: 1px solid #55523a; }
   #result .good { color: #a8e07a; } #result .bad { color: #ff8f7a; }
+  .modes { display: flex; gap: 10px; margin: 4px 0 6px; }
+  .mode { flex: 1; margin: 0; padding: 10px; text-align: left; background: #0e120a; color: #c9c3a4; border: 2px solid #55523a; letter-spacing: 0; font-weight: 400; }
+  .mode b { display: block; color: #f0d77a; letter-spacing: 2px; font-size: 14px; margin-bottom: 5px; }
+  .mode span { font-size: 11px; line-height: 1.45; display: block; }
+  .mode:hover { background: #161c0f; }
+  .mode.on { border-color: #f0d77a; background: #232a16; }
+  .card { width: min(520px, calc(100vw - 32px)) !important; }
   .hidden { display: none !important; }
   kbd { background: #0e120a; border: 1px solid #6c6844; padding: 0 4px; }
 </style>
@@ -33,11 +40,14 @@
 <div id="lobby" class="overlay">
   <div class="card">
     <h1>FORTRESS CREW</h1>
-    <p>You start in the air, in formation with six other B-17s. Fight off the fighters, bomb the target and bring her home. Walk the ship, take any station, give the bot crew their orders.</p>
-    <p>Your rank: <span id="rank"></span></p>
+    <p>Pick a side. Your rank: <span id="rank"></span></p>
+    <div class="modes">
+      <button type="button" id="modeB" class="mode"><b>BOMBER CREW</b><span>Fly in formation with six other B-17s. Walk the ship, man the guns, command the bot crew, bomb the target and bring her home.</span></button>
+      <button type="button" id="modeF" class="mode"><b>FIGHTER PILOT</b><span>Fly an interceptor against the formation. Shoot the Fortresses down before they reach the target. Their gunners shoot back.</span></button>
+    </div>
     <label for="name">CALLSIGN</label>
     <input id="name" maxlength="16" autocomplete="off">
-    <label for="room">CREW CODE (leave blank to start a new crew)</label>
+    <label for="room" id="roomLabel">CREW CODE (leave blank to start a new crew)</label>
     <input id="room" maxlength="8" autocomplete="off" style="text-transform:uppercase">
     <button id="join">REPORT FOR DUTY</button>
     <div id="err"></div>

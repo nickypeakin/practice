@@ -13,7 +13,7 @@ const ALT = 1200, CRUISE = 82, LEAD_TURN = 0.035;
 const SLOTS = [[0, 0, 0], [70, 12, 55], [140, 24, 110], [-140, -24, 110], [0, -28, 125], [75, -14, 180], [-75, -40, 185]];
 const MY_SLOT = [-70, -12, 55];
 const FIRE_RANGE = [650, 320, 0];
-export const MAX_PLAYERS = SEATS.length;
+export const MAX_PLAYERS = SEATS.length, MAX_FIGHTERS = 6;
 const pick = a => a[Math.floor(Math.random() * a.length)];
 const NAMES = ['Kowalski', 'Miller', 'O\'Brien', 'Rossi', 'Novak', 'Jensen', 'Baker', 'Morales', 'Sullivan', 'Becker', 'Hayes', 'Dubois', 'Carter', 'Lindqvist', 'Russo', 'Tanner', 'Whitaker', 'Zielinski'];
 const TALK = {
@@ -29,6 +29,7 @@ const TALK = {
   reload: ['Reloading!', 'Changing belts, cover me!', 'I\'m dry, reloading!'],
   wound: ['I\'m hit! I\'m hit!', 'Agh! They got me!', 'I\'m hit, but I can still shoot.'],
   bleed: ['I\'m bleeding bad... somebody help me.', 'Could use a hand back here. I\'m losing blood.'],
+  cold: ['{n} is out cold! He\'s breathing.', '{n}\'s been knocked out. He\'s alive.'],
   dead: ['{n}\'s been hit! He\'s not answering!', '{n} is down! He\'s gone.', 'We lost {n}. Damn it.'],
   thanks: ['Thanks. I\'ll make it.', 'That\'s better. Back on the gun.'],
 };
@@ -41,6 +42,17 @@ function steer(dir, des, maxAng) {
   const t = Math.min(1, maxAng / ang);
   const n = norm([dir[0] + (des[0] - dir[0]) * t, dir[1] + (des[1] - dir[1]) * t, dir[2] + (des[2] - dir[2]) * t]);
   dir[0] = n[0]; dir[1] = n[1]; dir[2] = n[2];
+}
+
+// Attitude from the lift vector, so an aircraft can roll right over and loop.
+// roll > 0 = left wing down, yaw > 0 = turning left, pitch > 0 = nose up. K = { pr, rr, yr } control rates.
+function attitude(o, c, dt, K) {
+  const V = Math.max(o.spd, 40), cr = Math.cos(o.roll), sr = Math.sin(o.roll), ct = Math.cos(o.pitch);
+  const hold = cr > 0 ? G * ct / Math.max(cr, 0.34) : 0;          // lift that holds the nose up, while the wings can still provide it
+  const L = hold + c.p * K.pr * V;
+  const dP = (L * cr - G * ct) / V - c.y * K.yr * sr;
+  const dY = (L * sr / V + c.y * K.yr * cr) / (Math.abs(ct) < 0.12 ? 0.12 * (ct < 0 ? -1 : 1) : ct);
+  o.pitch = wrap(o.pitch + dP * dt); o.yaw = wrap(o.yaw + dY * dt); o.roll = wrap(o.roll + c.r * K.rr * dt);
 }
 
 export class Room {
@@ -71,15 +83,16 @@ export class Room {
     this.pl = { x: s[0], y: s[1], z: s[2], yaw, pitch: 0, roll: 0, spd: CRUISE, vy: 0, thr: 0.44, gear: false, doors: false, ground: false,
       fuel: 100, leak: 0, hull: 100, eng: [100, 100, 100, 100], bombs: BOMBS_MAX, doomed: false, crashed: false };
     this.seats = SEATS.map(d => ({ pid: null, ammo: d.gun ? AMMO_MAX : 0, ay: d.gun ? d.gun.yc : 0, ap: 0, fire: false, cool: 0, out: false, kills: 0, bailT: null,
-      tid: 0, react: 0, burst: 1, pause: 0, wob: [0, 0], low: false, belt: d.gun ? BELT : 0, rl: 0, hp: 2, bleed: 0, stable: false, dead: false, pdead: false, warned: false }));
+      tid: 0, react: 0, burst: 1, pause: 0, wob: [0, 0], low: false, belt: d.gun ? BELT : 0, rl: 0, hp: 2, bleed: 0, stable: false, dead: false, pdead: false, warned: false, unc: false, wake: 0, body: 0, carrier: 0, bx: 0, bz: 0, saved: false }));
     this.talkT = 6; this.idleT = rnd(20, 40); this.flakT = 0; this.ctl = { p: 0, r: 0 };
     this.phase = 'flight'; this.dropCool = 0; this.botDropping = false; this.botDoors = false; this.formDrop = false;
     this.ord = { fire: 0, bomb: 0, ap: 0, focus: 0 };
     this.fighters = []; this.bullets = []; this.bombsAir = []; this.chutes = []; this.ev = [];
     this.waveT = 10; this.result = null; this.endT = 0; this.crashT = 0; this.noCrewT = 0; this.kills = 0; this.fkills = 0;
     this.bot = { app: 'iaf', broke: false, said: {} };
-    for (const p of this.players.values()) { p.bailed = false; p.dead = false; p.foot = null; p.walk = null; const s = p.seat; p.seat = -1; if (s >= 0 && !this.seats[s].pid) { this.seats[s].pid = p.id; p.seat = s; } }
-    for (const p of this.players.values()) if (p.seat < 0) this.autoSeat(p);
+    for (const p of this.players.values()) { p.bailed = false; p.dead = false; p.foot = null; p.walk = null; p.carry = null; const s = p.seat; p.seat = -1; if (p.side === 'f') { p.fid = 0; p.respawn = 0.5; } else if (s >= 0 && !this.seats[s].pid) { this.seats[s].pid = p.id; p.seat = s; } }
+    for (const p of this.players.values()) if (p.seat < 0 && p.side !== 'f') this.autoSeat(p);
+    this.lastHitBy = 0;
     this.msg(`Mission ${this.mid}: you are in formation, ${(sd / 1000).toFixed(0)} km from the target. Hold your slot and watch for fighters.`);
   }
 
@@ -100,19 +113,22 @@ export class Room {
   }
   takeAim(p, i) { p.in.f = 0; p.in.d = 0; if (SEATS[i].gun) { p.in.ay = this.seats[i].ay; p.in.ap = this.seats[i].ap; } }
   addPlayer(p) {
-    p.in = { p: 0, r: 0, y: 0, th: 0, br: 0, ay: 0, ap: 0, f: 0, d: 0 }; p.bailed = false; p.foot = null; p.walk = null; p.seat = -1;
+    p.in = { p: 0, r: 0, y: 0, th: 0, br: 0, ay: 0, ap: 0, f: 0, d: 0 }; p.bailed = false; p.foot = null; p.walk = null; p.seat = -1; p.carry = null;
     this.players.set(p.id, p);
+    if (p.side === 'f') { p.bk = 0; p.deaths = 0; p.fid = 0; p.respawn = 0.5; this.msg(`${p.name} is up in a fighter, hunting the formation.`); return; }
     if (this.pl.crashed || this.phase === 'ended' && this.result.outcome === 'lost') p.bailed = true; else this.autoSeat(p);
     this.msg(`${p.name} joined the crew.`);
   }
   removePlayer(p) {
     if (p.seat >= 0) this.seats[p.seat].pid = null;
-    this.players.delete(p.id); this.msg(`${p.name} left the crew.`);
+    this.putDown(p);
+    this.players.delete(p.id); this.msg(p.side === 'f' ? `${p.name} left the fight.` : `${p.name} left the crew.`);
   }
   // Take a station: instantly from another seat (keys 1-7), or by walking up to it.
   setSeat(p, i) {
     const s = this.seats[i];
-    if (!s || p.bailed || p.foot || s.pid || this.pl.crashed) return;
+    if (!s || p.side === 'f' || p.bailed || p.foot || s.pid || this.pl.crashed) return;
+    this.putDown(p);
     if (p.walk) { const st = SEATS[i].st; if (Math.hypot(p.walk.x - st[0], p.walk.z - st[1]) > 1.5) return; p.walk = null; }
     else if (p.seat < 0) return;
     else this.seats[p.seat].pid = null;
@@ -126,10 +142,15 @@ export class Room {
     if (a === 'next') { if (this.phase === 'ended' && this.endT > 0.5) this.endT = 0.5; return; }
     if (a === 'chute') {          // pull the ripcord
       const ch = this.chutes.find(c => c.pid === p.id && c.y > 0);
-      if (ch && !ch.open) { ch.open = true; this.ev.push({ k: 'open', id: p.id }); }
+      if (ch && !ch.open && !ch.pulled && !ch.body) {
+        ch.pulled = true;
+        if (ch.dud) { this.ev.push({ k: 'dud', id: p.id }); this.msg(`${p.name}'s parachute failed to open!`); }     // one in eight is a streamer
+        else { ch.open = true; this.ev.push({ k: 'open', id: p.id }); }
+      }
       return;
     }
-    if (pl.crashed || p.bailed) return;
+    if (a === 'fbail') { const f = this.fighters.find(f => f.id === p.fid && !f.gone); if (f && !(f.bailT > 0)) { f.bailT = f.dead ? 0.9 : 1.5; this.ev.push({ k: 'canopy', id: p.id }); } return; }
+    if (pl.crashed || p.bailed || p.side === 'f') return;
     if (a === 'board') {          // climb in through the crew door
       const d = this.doorGround();
       if (p.foot && pl.ground && pl.spd < 3 && Math.hypot(p.foot.x - d[0], p.foot.z - d[1]) < 7) {
@@ -152,6 +173,7 @@ export class Room {
     } else if (a === 'doors') this.setDoors(!pl.doors, p.name);
     else if (a === 'gear') { if (p.seat === 0 && !pl.ground) pl.gear = !pl.gear; }
     else if (a === 'order') this.order(p, m.n | 0, m.id | 0);
+    else if (a === 'carry') this.carry(p, m.i | 0);
     else if (a === 'reload') { const s = this.seats[p.seat]; if (s && SEATS[p.seat].gun && s.rl <= 0 && s.belt < Math.min(BELT, Math.floor(s.ammo))) s.rl = RELOAD_T; }
     else if (a === 'aid') {       // first aid for a wounded crewman you are standing next to
       const i = m.i | 0, s = this.seats[i];
@@ -198,6 +220,7 @@ export class Room {
   }
   // a player went out through the open bomb bay
   dropOut(p) {
+    this.putDown(p);
     const pl = this.pl, w = p.walk, o = rot([w.x * SCALE, -1.7 * SCALE, w.z * SCALE], pl.yaw, pl.pitch, pl.roll);
     p.walk = null;
     if (pl.ground) {
@@ -205,7 +228,7 @@ export class Room {
       this.msg(`${p.name} dropped out of the bomb bay.`);
     } else {
       p.bailed = true;
-      this.chutes.push({ id: this.uid++, x: pl.x + o[0], y: pl.y + o[1], z: pl.z + o[2], vx: planeVel(pl)[0], vz: planeVel(pl)[2], vy: Math.min(pl.vy, 0) - 4, pid: p.id, open: false });
+      this.chutes.push({ id: this.uid++, x: pl.x + o[0], y: pl.y + o[1], z: pl.z + o[2], vx: planeVel(pl)[0], vz: planeVel(pl)[2], vy: Math.min(pl.vy, 0) - 4, pid: p.id, open: false, dud: Math.random() < 1 / 8 });
       this.msg(`${p.name} jumped from the bomb bay!`);
     }
   }
@@ -235,6 +258,8 @@ export class Room {
     this.updBullets(dt);
     this.updBombs(dt);
     this.updFighters(dt);
+    this.fighterPlayers(dt);
+    this.wakeUp(dt);
     for (const ch of this.chutes) {
       if (ch.y <= 0) continue;
       if (!ch.pid && !ch.open && (ch.t -= dt) <= 0) ch.open = true;         // bots pull their own; players have to do it
@@ -244,7 +269,8 @@ export class Room {
       ch.x += ch.vx * dt; ch.z += ch.vz * dt; ch.y += ch.vy * dt;
       if (ch.y <= 0) {
         ch.y = 0; const p = ch.pid && this.players.get(ch.pid);
-        if (p) { if (ch.vy < -14) { p.dead = true; this.msg(ch.open ? `${p.name} opened too late and hit hard.` : `${p.name}'s parachute never opened.`); } else this.msg(`${p.name} is down safe.`); this.ev.push({ k: 'land', id: p.id, dead: p.dead ? 1 : 0 }); }
+        if (p) { if (ch.body) { } else if (ch.vy < -14) { p.dead = true; if (p.side === 'f') p.deaths = (p.deaths || 0) + 1; this.msg(ch.open ? `${p.name} opened too late and hit hard.` : `${p.name}'s parachute never opened.`); } else this.msg(`${p.name} is down safe.`);
+          if (p.side === 'f') p.respawn = 5; this.ev.push({ k: 'land', id: p.id, dead: p.dead ? 1 : 0 }); }
       }
     }
 
@@ -257,11 +283,11 @@ export class Room {
 
     // end conditions
     if (this.phase !== 'ended') {
-      let aboard = 0; for (const p of this.players.values()) if (!p.bailed && !p.foot) aboard++;
-      const falling = this.chutes.some(c => c.pid && c.y > 0 && this.players.has(c.pid));    // let jumpers reach the ground before the mission is scored
+      let aboard = 0, crewmen = 0; for (const p of this.players.values()) if (p.side !== 'f') { crewmen++; if (!p.bailed && !p.foot) aboard++; }
+      const falling = this.chutes.some(c => c.pid && c.y > 0 && this.players.has(c.pid) && this.players.get(c.pid).side !== 'f');    // let jumpers reach the ground before the mission is scored
       if (pl.crashed) { if ((this.crashT += dt) > 3 && !falling) this.end('lost'); }
       else if (pl.ground && pl.spd < 0.5) this.end(this.atBase() ? (this.tgt.hp <= 0 ? 'success' : 'aborted') : 'ditched');
-      else if (aboard === 0 && this.players.size) { if (!falling && (this.noCrewT += dt) > 4) this.end('lost'); }
+      else if (aboard === 0 && crewmen) { if (!falling && (this.noCrewT += dt) > 4) this.end('lost'); }
     }
   }
 
@@ -284,19 +310,58 @@ export class Room {
     const a = this.seats.map((s, i) => i).filter(i => !this.seats[i].out);
     if (!a.length) return;
     const i = pick(a), s = this.seats[i];
-    if (s.hp === 2 && Math.random() < 0.85) { s.hp = 1; s.bleed = 150; s.stable = false; s.warned = false; this.ev.push({ k: 'msg', s: `${SEATS[i].name} ${this.crew[i]}: ${pick(TALK.wound)}`, r: 1, w: 1 }); }
+    const r = Math.random();
+    if (s.hp === 2 && r < 0.62) { s.hp = 1; s.bleed = 150; s.stable = false; s.warned = false; this.ev.push({ k: 'msg', s: `${SEATS[i].name} ${this.crew[i]}: ${pick(TALK.wound)}`, r: 1, w: 1 }); }
+    else if (r < 0.82) this.killCrew(i, true);        // knocked cold: out of the fight, but alive
     else this.killCrew(i);
   }
-  killCrew(i) {
+  killCrew(i, cold) {
     const s = this.seats[i];
     if (i === 0 && !s.pdead) {    // the copilot takes over
-      s.pdead = true; s.hp = 2; s.stable = false;
-      this.ev.push({ k: 'msg', s: `Copilot: ${this.crew[0]} is hit! I have the airplane.`, r: 1, w: 1 }); return;
+      s.pdead = true; s.hp = 2; s.stable = false; s.unc = !!cold; s.wake = rnd(70, 150);
+      this.ev.push({ k: 'msg', s: `Copilot: ${this.crew[0]} is ${cold ? 'out cold' : 'hit'}! I have the airplane.`, r: 1, w: 1 }); return;
     }
-    s.dead = true; s.out = true; s.fire = false; s.hp = 0;
+    if (i === 0 && s.body === 0) s.body = 4;          // the first pilot is still slumped in the left seat; now the right seat is lost too
+    s.dead = !cold; s.unc = !!cold; s.wake = rnd(70, 150); s.out = true; s.fire = false; s.hp = cold ? 2 : 0;
     const o = this.anyBot();
-    this.ev.push({ k: 'msg', s: o >= 0 ? `${SEATS[o].name} ${this.crew[o]}: ${pick(TALK.dead).replace('{n}', this.crew[i])}` : `${this.crew[i]} has been killed.`, r: 1, w: 1 });
+    this.ev.push({ k: 'msg', s: o >= 0 ? `${SEATS[o].name} ${this.crew[o]}: ${pick(cold ? TALK.cold : TALK.dead).replace('{n}', this.crew[i])}` : `${this.crew[i]} ${cold ? 'is unconscious' : 'has been killed'}.`, r: 1, w: 1 });
     if (i === 0) this.msg('Nobody is flying the ship! Somebody take the pilot\'s seat!');
+  }
+  // A man lying on the floor (dead or unconscious) can be picked up, carried, put down, or pushed out through the open bomb bay.
+  down(i) { const s = this.seats[i]; return (s.dead || s.unc || (i === 0 && s.pdead)) && s.body !== 2 && s.body !== 4; }
+  putDown(p) {
+    if (p.carry == null) return;
+    const s = this.seats[p.carry]; p.carry = null; s.carrier = 0;
+    if (p.walk) { s.body = 3; s.bx = p.walk.x; s.bz = p.walk.z; } else s.body = 0;
+  }
+  carry(p, i) {
+    const pl = this.pl, w = p.walk; if (!w) return;
+    if (p.carry != null) {
+      const k = p.carry, s = this.seats[k], alive = s.unc;
+      if (pl.doors && !pl.ground && w.z > BAY.z0 && w.z < BAY.z1) {
+        p.carry = null; s.carrier = 0; s.body = 2; s.saved = alive;
+        const o = rot([w.x * SCALE, -1.7 * SCALE, w.z * SCALE], pl.yaw, pl.pitch, pl.roll), v = planeVel(pl);
+        this.chutes.push({ id: this.uid++, x: pl.x + o[0], y: pl.y + o[1], z: pl.z + o[2], vx: v[0], vz: v[2], vy: -3, pid: 0, open: false, t: alive ? 1.4 : 1e9, body: !alive });
+        this.msg(alive ? `${p.name} hooked up ${this.crew[k]}'s static line and pushed him out. His chute is open.` : `${p.name} put ${this.crew[k]} out through the bomb bay.`);
+      } else this.putDown(p);
+      return;
+    }
+    const s = this.seats[i]; if (!s || !this.down(i) || s.carrier) return;
+    const at = s.body === 3 ? [s.bx, s.bz] : SEATS[i].st;
+    if (Math.hypot(w.x - at[0], w.z - at[1]) > 2.2) return;
+    s.body = 1; s.carrier = p.id; p.carry = i;
+  }
+  // an unconscious man may come round
+  wakeUp(dt) {
+    if (this.phase !== 'flight') return;
+    this.seats.forEach((s, i) => {
+      if (!s.unc || s.body === 2 || s.carrier || (s.wake -= dt) > 0) return;
+      s.wake = 1e9; if (Math.random() < 0.5) return;
+      s.unc = false; s.body = 0; s.hp = 1; s.stable = true;
+      if (i === 0 && !s.dead) { s.pdead = false; this.ev.push({ k: 'msg', s: `Pilot ${this.crew[0]}: Ugh... what hit me? I'm back with you.`, r: 1 }); return; }
+      if (i === 0) return;
+      s.out = false; this.ev.push({ k: 'msg', s: `${SEATS[i].name} ${this.crew[i]}: Ugh... what hit me? I'm back on the gun.`, r: 1 });
+    });
   }
   bleeding(dt) {
     this.seats.forEach((s, i) => {
@@ -309,8 +374,9 @@ export class Room {
 
   end(outcome) {
     this.phase = 'ended'; this.endT = outcome === 'lost' ? 14 : 90;   // after a landing the crew gets time to climb out and walk around
-    const res = { outcome, tgt: this.tgt.hp <= 0, crewLost: this.seats.filter(s => s.dead).length + (this.seats[0].pdead && !this.seats[0].dead ? 1 : 0), kills: this.kills, fkills: this.fkills, lost: this.wing.filter(b => b.dead).length + SLOTS.length - this.wing.length, players: [] };
+    const res = { outcome, tgt: this.tgt.hp <= 0, crewLost: this.seats.filter(s => s.dead).length + (this.seats[0].pdead && !this.seats[0].unc && !this.seats[0].dead ? 1 : 0), kills: this.kills, fkills: this.fkills, lost: this.wing.filter(b => b.dead).length + SLOTS.length - this.wing.length, players: [] };
     for (const p of this.players.values()) {
+      if (p.side === 'f') { res.players.push({ id: p.id, name: p.name, status: 'fighter', missions: p.missions, bk: p.bk || 0, deaths: p.deaths || 0 }); continue; }
       const status = p.bailed ? (p.dead ? 'kia' : 'bailed') : outcome === 'success' ? 'credit' : outcome === 'lost' ? 'kia' : 'none';
       if (status === 'credit') p.missions++;
       res.players.push({ id: p.id, name: p.name, status, missions: p.missions });
@@ -373,21 +439,19 @@ export class Room {
       acc -= G * Math.sin(pl.pitch);
       pl.spd = Math.max(20, pl.spd + acc * dt);
       const auth = clamp(pl.spd / 60, 0.2, 1);
-      if (pl.doomed) { pl.pitch += (-0.6 - pl.pitch) * 0.4 * dt; pl.roll += 0.5 * dt; }
+      if (pl.doomed) { pl.pitch += (-0.6 - pl.pitch) * 0.4 * dt; pl.roll = wrap(pl.roll + 0.5 * dt); }
       else {
-        pl.pitch = clamp(pl.pitch + c.p * 0.45 * auth * dt, -1, 1);
-        pl.roll = clamp(pl.roll + c.r * 0.9 * auth * dt, -1.2, 1.2);
-        if (c.r === 0) pl.roll -= pl.roll * 0.25 * dt;
+        attitude(pl, c, dt, { pr: 0.45 * auth, rr: 0.9 * auth, yr: 0.12 });
+        if (c.r === 0 && Math.abs(pl.roll) < 1.3) pl.roll -= pl.roll * 0.25 * dt;      // she rights herself from a gentle bank, not from on her back
       }
       let sink = 0;
-      if (pl.spd < 46) { sink = (46 - pl.spd) * 0.7; if (!pl.doomed) pl.pitch += (-0.25 - pl.pitch) * 0.6 * dt; }
-      pl.yaw = wrap(pl.yaw + (G * Math.tan(clamp(pl.roll, -1.2, 1.2)) / Math.max(pl.spd, 45) + c.y * 0.12) * dt);
+      if (pl.spd < 46) { sink = (46 - pl.spd) * 0.7; if (!pl.doomed && Math.abs(pl.pitch) < 1.5) pl.pitch += (-0.25 - pl.pitch) * 0.6 * dt; }
       const cp = Math.cos(pl.pitch);
       pl.vy = Math.sin(pl.pitch) * pl.spd - sink;
       pl.x += -Math.sin(pl.yaw) * cp * pl.spd * dt; pl.z += -Math.cos(pl.yaw) * cp * pl.spd * dt; pl.y += pl.vy * dt;
       if (pl.y <= 3) {
         pl.y = 3;
-        const hard = pl.vy < -8 || Math.abs(pl.roll) > 0.45 || pl.pitch < -0.3 || pl.doomed || (!pl.gear && pl.vy < -4);
+        const hard = pl.vy < -8 || Math.abs(pl.roll) > 0.45 || pl.pitch < -0.3 || pl.pitch > 1.2 || pl.doomed || (!pl.gear && pl.vy < -4);
         if (hard) { pl.crashed = true; pl.spd = 0; this.ev.push({ k: 'crash', x: r2(pl.x), y: 3, z: r2(pl.z) }); this.msg('The aircraft has crashed.'); }
         else {
           pl.ground = true; pl.pitch = Math.max(0, pl.pitch); pl.vy = 0;
@@ -410,8 +474,9 @@ export class Room {
       b.yaw = L.yaw; b.roll = L.tr / LEAD_TURN * 0.3 + Math.sin(t * 0.5 + i) * 0.02; b.pitch = 0;
     });
   }
-  killWing(b) {
+  killWing(b, pid) {
     b.dead = true; b.vy = 0; b.fid = 0;
+    const by = pid && this.players.get(pid); if (by) { by.bk = (by.bk || 0) + 1; this.msg(`${by.name} shot down a Fortress!`); }
     this.ev.push({ k: 'kill', x: r2(b.x), y: r2(b.y), z: r2(b.z) });
     for (let i = 0, n = 2 + Math.floor(Math.random() * 5); i < n; i++) this.chutes.push({ id: this.uid++, x: b.x + rnd(-30, 30), y: b.y - 5, z: b.z + i * 25, vy: -6, pid: 0, t: rnd(0.5, 2) });
     this.msg('A Fortress in the formation is going down!');
@@ -452,7 +517,7 @@ export class Room {
       let best = null, bd = 600;
       for (const f of this.fighters) { if (f.dead) continue; const d = Math.hypot(f.p[0] - b.x, f.p[1] - b.y, f.p[2] - b.z); if (d < bd) { bd = d; best = f; } }
       b.fid = best ? best.id : 0;
-      if (best && Math.random() < 0.1 * dt) this.hitFighter(best, 22, null);
+      if (best && Math.random() < 0.1 * dt) this.hitFighter(best, best.pid ? 9 : 22, null);
     }
     this.wing = this.wing.filter(b => !b.gone);
   }
@@ -563,10 +628,12 @@ export class Room {
   hitFighter(f, dmg, seat) {
     f.hp -= dmg; this.ev.push({ k: 'fhit', id: f.id });
     if (f.hp > 0) return;
-    f.dead = true; f.t = 6; f.firing = false;
+    f.dead = true; f.t = f.pid ? 40 : 6; f.firing = false;     // a player's fighter falls all the way down, so he has time to get out
     if (this.ord.focus === f.id) this.ord.focus = 0;
     this.ev.push({ k: 'kill', x: r2(f.p[0]), y: r2(f.p[1]), z: r2(f.p[2]) });
-    if (seat == null) { this.fkills++; this.msg('The formation shot down a fighter.'); return; }
+    const vic = f.pid && this.players.get(f.pid);
+    if (vic) { this.msg(`${vic.name}'s fighter is hit and going down!`); this.ev.push({ k: 'fdown', id: vic.id }); }
+    if (seat == null) { this.fkills++; if (!vic) this.msg('The formation shot down a fighter.'); return; }
     this.kills++;
     const s = this.seats[seat]; s.kills++;
     if (s.pid) this.msg(`${this.players.get(s.pid).name} shot down a fighter!`); else this.say(seat, 'kill', null, true);
@@ -575,11 +642,16 @@ export class Room {
     for (const b of this.bullets) {
       const nx = b.x + b.vx * dt, ny = b.y + b.vy * dt, nz = b.z + b.vz * dt;
       const sx = nx - b.x, sy = ny - b.y, sz = nz - b.z, sl2 = sx * sx + sy * sy + sz * sz;
-      for (const f of this.fighters) {
+      const near = (px, py, pz, r) => { const t = clamp(((px - b.x) * sx + (py - b.y) * sy + (pz - b.z) * sz) / sl2, 0, 1); return Math.hypot(b.x + sx * t - px, b.y + sy * t - py, b.z + sz * t - pz) < r; };
+      if (b.fid) {                // a player fighter's round: the player's ship, then the rest of the formation
+        const pl = this.pl, hitShip = (x, y, z, yaw) => { for (const k of [-9, 0, 9]) if (near(x + Math.sin(yaw) * k, y, z + Math.cos(yaw) * k, 6.5)) return true; return false; };
+        if (!pl.crashed && hitShip(pl.x, pl.y, pl.z, pl.yaw)) { b.life = 0; this.lastHitBy = b.pid; this.applyHit(); }
+        else for (const w of this.wing) if (!w.dead && hitShip(w.x, w.y, w.z, w.yaw)) { b.life = 0; w.hp -= 2.5; this.ev.push({ k: 'whit', id: w.id }); if (w.hp <= 0) this.killWing(w, b.pid); break; }
+      } else for (const f of this.fighters) {
         if (f.dead) continue;
-        const t = clamp(((f.p[0] - b.x) * sx + (f.p[1] - b.y) * sy + (f.p[2] - b.z) * sz) / sl2, 0, 1);
-        if (Math.hypot(b.x + sx * t - f.p[0], b.y + sy * t - f.p[1], b.z + sz * t - f.p[2]) < 9) { b.life = 0; this.hitFighter(f, 22, b.seat); break; }
+        if (near(f.p[0], f.p[1], f.p[2], 9)) { b.life = 0; this.hitFighter(f, f.pid ? 12 : 22, b.seat); break; }
       }
+      b.vy -= G * dt;             // rounds drop
       b.x = nx; b.y = ny; b.z = nz; b.life -= dt;
     }
     this.bullets = this.bullets.filter(b => b.life > 0 && b.y > 0);
@@ -642,6 +714,7 @@ export class Room {
     this.ev.push({ k: 'hit', f: flak ? 1 : 0 });
     pl.hull = Math.max(0, pl.hull);
     if (pl.hull <= 0 && !pl.doomed) {
+      const by = this.lastHitBy && this.players.get(this.lastHitBy); if (by) { by.bk = (by.bk || 0) + 1; this.msg(`${by.name} shot down the lead crew's Fortress!`); }
       pl.doomed = true; pl.doors = true; this.botDoors = false;
       this.msg('WE\'RE GOING DOWN! Bay doors are open: get to the bomb bay and jump!');
     }
@@ -655,7 +728,7 @@ export class Room {
     const hot = this.phase === 'flight' && !pl.crashed && !pl.ground && Math.hypot(pl.x, pl.z) > 5000;
     if (hot) {
       this.waveT -= dt;
-      const alive = this.fighters.filter(f => !f.dead).length;
+      const alive = this.fighters.filter(f => !f.dead && !f.pid).length;
       if (this.waveT <= 0 && alive < 3) {
         this.waveT = Math.max(20, 32 - lvl);
         const n = Math.min(3 + Math.floor(lvl / 3), 7), brg = Math.random() * Math.PI * 2, hi = rnd(150, 600);
@@ -670,12 +743,15 @@ export class Room {
       }
     }
     for (const f of this.fighters) {
+      if (f.pid) this.fighterBail(f, dt);
       if (f.dead) {
         f.dir[1] -= 0.5 * dt; f.dir = norm(f.dir); f.t -= dt;
         f.p[0] += f.dir[0] * f.spd * dt; f.p[1] += f.dir[1] * f.spd * dt; f.p[2] += f.dir[2] * f.spd * dt;
-        if (f.t <= 0 || f.p[1] <= 0) { f.gone = true; this.ev.push({ k: 'kill', x: r2(f.p[0]), y: r2(Math.max(0, f.p[1])), z: r2(f.p[2]) }); }
+        if (f.yaw != null) { f.yaw = Math.atan2(-f.dir[0], -f.dir[2]); f.pitch = Math.asin(clamp(f.dir[1], -1, 1)); f.roll = wrap(f.roll + 1.6 * dt); }
+        if (f.t <= 0 || f.p[1] <= 0) { f.gone = true; this.ev.push({ k: 'kill', x: r2(f.p[0]), y: r2(Math.max(0, f.p[1])), z: r2(f.p[2]) }); this.pilotLost(f); }
         continue;
       }
+      if (f.pid) { this.flyFighter(f, dt); continue; }
       let wb = f.tg ? this.wing.find(b => b.id === f.tg && !b.dead) : null;
       if (f.tg && !wb) { this.pickTarget(f, Math.random() < 0.5); wb = f.tg ? this.wing.find(b => b.id === f.tg) : null; }
       const tp = wb ? [wb.x, wb.y, wb.z] : [pl.x, pl.y, pl.z], tv = wb ? lv : pv;
@@ -703,6 +779,58 @@ export class Room {
     this.fighters = this.fighters.filter(f => !f.gone);
   }
 
+  // ---------------------------------------------------------------- player fighters
+  spawnFighter(p) {
+    const L = this.lead, a = L.yaw + rnd(-0.5, 0.5);
+    const pos = [L.x + Math.sin(a) * 2600, L.y + rnd(250, 450), L.z + Math.cos(a) * 2600];      // astern of the formation, above it
+    const f = { id: this.uid++, pid: p.id, p: pos, yaw: a, pitch: -0.08, roll: 0, spd: 135, thr: 0.8, hp: 100, ammo: 700, cool: 0, dead: false, firing: false, bailT: 0, t: 0, gun: 0 };
+    f.dir = [-Math.sin(f.yaw) * Math.cos(f.pitch), Math.sin(f.pitch), -Math.cos(f.yaw) * Math.cos(f.pitch)];
+    this.fighters.push(f); p.fid = f.id; p.bailed = false; p.dead = false; p.respawn = 0;
+    this.chutes = this.chutes.filter(c => c.pid !== p.id);
+  }
+  flyFighter(f, dt) {
+    const p = this.players.get(f.pid);
+    if (!p || p.fid !== f.id) { f.dead = true; f.t = 8; f.pid = p ? f.pid : 0; return; }      // pilot gone: she flies on empty and falls
+    const i = p.in, bailing = f.bailT > 0, c = bailing || this.phase === 'ended' ? { p: 0, r: 0, y: 0, th: 0 } : { p: clamp(+i.p || 0, -1, 1), r: clamp(+i.r || 0, -1, 1), y: clamp(+i.y || 0, -1, 1), th: clamp(+i.th || 0, -1, 1) };
+    f.thr = clamp(f.thr + c.th * 0.8 * dt, 0.15, 1);
+    f.spd = Math.max(35, f.spd + (f.thr * 5.4 * (f.hp < 40 ? 0.6 : 1) - 0.00016 * f.spd * f.spd - G * Math.sin(f.pitch)) * dt);
+    const auth = clamp(f.spd / 75, 0.25, 1);
+    attitude(f, c, dt, { pr: 1.15 * auth, rr: 2.7 * auth, yr: 0.3 });
+    if (f.spd < 52 && Math.abs(f.pitch) < 1.5) f.pitch += (-0.5 - f.pitch) * 0.8 * dt;         // stall: the nose drops
+    const cp = Math.cos(f.pitch); f.dir = [-Math.sin(f.yaw) * cp, Math.sin(f.pitch), -Math.cos(f.yaw) * cp];
+    for (let k = 0; k < 3; k++) f.p[k] += f.dir[k] * f.spd * dt;
+    if (f.p[1] <= 2) { f.p[1] = 2; f.gone = true; this.ev.push({ k: 'crash', x: r2(f.p[0]), y: 2, z: r2(f.p[2]) }); this.msg(`${p.name} flew into the ${'sea'}.`); this.pilotLost(f); return; }
+    f.cool -= dt; f.firing = !!i.f && f.ammo > 0 && !bailing && this.phase !== 'ended';
+    if (f.firing && f.cool <= 0) {
+      f.cool = 0.075; f.ammo--; f.gun ^= 1;
+      const o = rot([f.gun ? 1.6 : -1.6, -0.3, -2], f.yaw, f.pitch, f.roll), sp = 0.005;
+      const d = norm(rot(aimDir(gauss() * sp, gauss() * sp), f.yaw, f.pitch, f.roll));
+      this.bullets.push({ x: f.p[0] + o[0], y: f.p[1] + o[1], z: f.p[2] + o[2], vx: d[0] * BULLET_SPD + f.dir[0] * f.spd, vy: d[1] * BULLET_SPD + f.dir[1] * f.spd, vz: d[2] * BULLET_SPD + f.dir[2] * f.spd, life: 1.2, fid: f.id, pid: p.id });
+    }
+  }
+  // The canopy takes a moment to open; then the pilot goes over the side. One time in eight he hits his own tail.
+  fighterBail(f, dt) {
+    if (!(f.bailT > 0) || (f.bailT -= dt) > 0) return;
+    const p = this.players.get(f.pid); if (!p || p.fid !== f.id) return;
+    const strike = Math.random() < 1 / 8;
+    p.fid = 0; p.bailed = true; p.dead = strike; if (strike) p.deaths = (p.deaths || 0) + 1;
+    this.chutes.push({ id: this.uid++, x: f.p[0], y: f.p[1] + 1, z: f.p[2], vx: f.dir[0] * f.spd, vz: f.dir[2] * f.spd, vy: f.dir[1] * f.spd * 0.5 + 3, pid: p.id, open: false, dud: Math.random() < 1 / 8, body: strike });
+    this.ev.push({ k: 'jump', id: p.id, strike: strike ? 1 : 0 });
+    this.msg(strike ? `${p.name} hit the tail of his own fighter bailing out.` : `${p.name} bailed out of his fighter.`);
+    if (!f.dead) { f.dead = true; f.t = 9; }
+  }
+  // the fighter is gone with its pilot still in it
+  pilotLost(f) {
+    const p = f.pid && this.players.get(f.pid);
+    if (p && p.fid === f.id) { p.fid = 0; p.deaths = (p.deaths || 0) + 1; p.respawn = 4; this.ev.push({ k: 'fdead', id: p.id }); }
+  }
+  fighterPlayers(dt) {
+    for (const p of this.players.values()) {
+      if (p.side !== 'f' || p.fid) continue;
+      if (p.respawn > 0 && (p.respawn -= dt) <= 0 && this.phase === 'flight') this.spawnFighter(p);
+    }
+  }
+
   // ---------------------------------------------------------------- network
   snapshot() {
     const pl = this.pl, o = this.ord, sl = this.slotPos(), ps = [...this.players.values()];
@@ -714,11 +842,13 @@ export class Room {
       ft: ps.filter(p => p.foot).map(p => [p.id, r2(p.foot.x), r2(p.foot.z), r3(p.foot.yaw), p.name]),
       wk: ps.filter(p => p.walk).map(p => [p.id, r2(p.walk.x), r2(p.walk.z), r3(p.walk.yaw), p.name]),
       st: this.seats.map(s => { const p = s.pid && this.players.get(s.pid); return [s.pid || 0, p ? p.name : '', p ? p.missions : 0, Math.floor(s.ammo), r3(s.ay), r3(s.ap), s.fire ? 1 : 0, s.out ? 1 : 0, s.kills,
-        s.dead ? 3 : s.hp === 1 ? (s.stable ? 2 : 1) : s.pdead ? 4 : 0, s.belt, s.rl > 0 ? r2(1 - s.rl / RELOAD_T) : -1]; }),
-      f: this.fighters.map(f => [f.id, r2(f.p[0]), r2(f.p[1]), r2(f.p[2]), r2(f.dir[0] * f.spd), r2(f.dir[1] * f.spd), r2(f.dir[2] * f.spd), (f.firing ? 1 : 0) | (f.dead ? 2 : 0) | (f.hp <= 50 ? 4 : 0)]),
+        s.dead ? 3 : s.unc && s.out ? 5 : s.hp === 1 ? (s.stable ? 2 : 1) : s.pdead ? 4 : 0, s.belt, s.rl > 0 ? r2(1 - s.rl / RELOAD_T) : -1, s.body, s.carrier, r2(s.bx), r2(s.bz), s.unc ? 1 : 0]; }),
+      f: this.fighters.map(f => [f.id, r2(f.p[0]), r2(f.p[1]), r2(f.p[2]), r2(f.dir[0] * f.spd), r2(f.dir[1] * f.spd), r2(f.dir[2] * f.spd), (f.firing ? 1 : 0) | (f.dead ? 2 : 0) | (f.hp <= 50 ? 4 : 0) | (f.pid ? 8 : 0)]),
+      pf: this.fighters.filter(f => f.yaw != null).map(f => { const p = this.players.get(f.pid); return [f.id, p && p.fid === f.id ? f.pid : 0, r3(f.yaw), r3(f.pitch), r3(f.roll), r2(f.thr), Math.max(0, Math.round(f.hp)), f.ammo, f.bailT > 0 ? r2(f.bailT) : 0, p ? p.name : '']; }),
+      fp: ps.filter(p => p.side === 'f').map(p => [p.id, p.name, p.bk || 0, p.deaths || 0, p.fid ? 0 : Math.ceil(p.respawn || 0)]),
       w: this.wing.map(b => [b.id, r2(b.x), r2(b.y), r2(b.z), r3(b.yaw), r3(b.roll), r3(b.pitch), b.dead ? 2 : 0, b.fid]),
       b: this.bombsAir.map(b => [b.id, r2(b.x), r2(b.y), r2(b.z)]),
-      c: this.chutes.map(c => [c.id, r2(c.x), r2(c.y), r2(c.z), c.pid, c.open ? 1 : 0, r2(c.vy)]),
+      c: this.chutes.map(c => [c.id, r2(c.x), r2(c.y), r2(c.z), c.pid, c.open ? 1 : c.pulled ? 2 : 0, r2(c.vy), c.body ? 1 : 0]),
       tg: [r2(this.tgt.x), r2(this.tgt.z), Math.round(this.tgt.hp)],
       sl: [r2(sl[0]), r2(sl[1]), r2(sl[2]), this.lead.leg],
       od: [o.fire, o.bomb, o.ap, o.focus],
